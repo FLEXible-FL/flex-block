@@ -8,7 +8,7 @@ def collect_clients_weights(func):
         if "weights" not in aggregator_flex_model:
             aggregator_flex_model["weights"] = []
         for k in clients_flex_models:
-            # Skip clients to connected to our blockchain node
+            # Skip clients not connected to our blockchain node
             if (
                 aggregator_flex_model[CLIENT_CONNS_BLOCKFED_TAG] is None
                 or k in aggregator_flex_model[CLIENT_CONNS_BLOCKFED_TAG]
