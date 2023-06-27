@@ -83,6 +83,9 @@ class BlockChainPool(FlexPool):
 
     def run_concensus(self, concensus_mechanism, blockchain, *args, **kwargs):
         aggregator_pool = self.aggregators
-        models = [aggregator_pool._models.get(i) for i in aggregator_pool._actors]
+        aggregators = [
+            (i, aggregator_pool._models.get(i)) for i in aggregator_pool._actors
+        ]
+        models = [model for _, model in aggregators]
         chossen_model = concensus_mechanism(models, blockchain, *args, **kwargs)
-        return chossen_model
+        return aggregators[chossen_model][0]
