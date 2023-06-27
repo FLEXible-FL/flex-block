@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import random
 from typing import Callable
-import numpy as np
 
+import numpy as np
 from flex.actors.actors import FlexActors, FlexRole
-from flex.pool import FlexPool
 from flex.data import FedDataset
 from flex.model.model import FlexModel
+from flex.pool import FlexPool
 
 CLIENT_CONNS_BLOCKFED_TAG = "clients_connections"
 
@@ -80,3 +80,9 @@ class BlockChainPool(FlexPool):
         )
         new_arch.servers.map(init_func, **kwargs)
         return new_arch
+
+    def run_concensus(self, concensus_mechanism, blockchain, *args, **kwargs):
+        aggregator_pool = self.aggregators
+        models = [aggregator_pool._models.get(i) for i in aggregator_pool._actors]
+        chossen_model = concensus_mechanism(models, blockchain, *args, **kwargs)
+        return chossen_model
