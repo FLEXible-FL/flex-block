@@ -1,1 +1,1 @@
-from flexBlock.blockchain.blockchain import Block, Blockchain
+from flexBlock.blockchain.blockchain import BlockPoW, BlockchainPow
