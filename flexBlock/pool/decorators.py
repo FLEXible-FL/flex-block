@@ -10,9 +10,9 @@ def send_weights_to_miner(func):
         if CLIENT_CONNS_BLOCKFED_TAG not in aggregator_flex_model:
             # We assume that each server is a client and has
             # no other clients connected to it
-            aggregator_flex_model["weights"] = func(
-                aggregator_flex_model, *args, **kwargs
-            )
+            client_weights = func(aggregator_flex_model, *args, **kwargs)
+
+            aggregator_flex_model["weights"].append(client_weights)
             return
 
         for k in clients_flex_models:
