@@ -90,6 +90,9 @@ class _BlockchainPool(ABC):
     ):
         pass
 
+    def __len__(self):
+        return len(self._pool)
+
 
 class PoWBlockchainPool(_BlockchainPool):
     def __init__(
