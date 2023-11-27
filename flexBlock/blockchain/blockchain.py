@@ -1,13 +1,14 @@
 from dataclasses import dataclass
+from typing import TypeVar
 from abc import abstractmethod, ABC
-from typing import List
+from typing import List, Generic
 from hashlib import sha256
 import random
 import time
 
 
 @dataclass
-class _Block(ABC):
+class Block(ABC):
     @abstractmethod
     def __init__(self, weights):
         self._previous_hash = None
@@ -21,10 +22,11 @@ class _Block(ABC):
 
 
 @dataclass
-class BlockPoW(_Block):
+class BlockPoW(Block):
     def __init__(self, weights):
         super().__init__(weights)
-        self.target_zeroes = None
+        # Default value
+        self.target_zeroes = 3
 
     def compute_hash(self, nonce=None):
         hashed_weights = sha256(bytes(self.weights)).hexdigest()
@@ -34,10 +36,11 @@ class BlockPoW(_Block):
 
 
 @dataclass
-class BlockPoFL(_Block):
+class BlockPoFL(Block):
     def __init__(self, weights):
         super().__init__(weights)
-        self.target_err = None
+        # Default value
+        self.target_err = 0.3
 
     def compute_hash(self):
         hashed_weights = sha256(bytes(self.weights)).hexdigest()
@@ -45,23 +48,27 @@ class BlockPoFL(_Block):
 
 
 @dataclass
-class BlockPoS(_Block):
+class BlockPoS(Block):
     def __init__(self, weights):
         super().__init__(weights)
 
     def compute_hash(self):
-        hashed_weights = sha256(bytes(self.weights)).hexdigest()
+        # hashed_weights = sha256(bytes(self.weights)).hexdigest()
+        hashed_weights = sha256(bytes("hello world lol".encode())).hexdigest()
         return sha256((self._previous_hash + hashed_weights).encode()).hexdigest()
 
 
-class _Blockchain(ABC):
-    @abstractmethod
-    def __init__(self, _BlockType: type):
-        self.chain: List[_BlockType] = []
-        self._block_type = _BlockType
+_BlockType = TypeVar("_BlockType", bound=Block)
 
+
+class Blockchain(ABC, Generic[_BlockType]):
     @abstractmethod
-    def add_block(self, block):
+    def __init__(self, genesis_block: _BlockType, *args, **kwargs):
+        genesis_block._previous_hash = "0"
+        genesis_block.hash = genesis_block.compute_hash()
+        self.chain: List[_BlockType] = [genesis_block]
+
+    def add_block(self, block: _BlockType):
         previous_hash = self.chain[-1].hash if len(self.chain) else str(random.random())
         block._previous_hash = previous_hash
         block.hash = block.compute_hash()
@@ -72,13 +79,12 @@ class _Blockchain(ABC):
         return self.chain[-1]
 
 
-class BlockchainPow(_Blockchain):
-    def __init__(self):
-        super().__init__(BlockPoW)
+class BlockchainPow(Blockchain[BlockPoW]):
+    def __init__(self, genesis_block: BlockPoW, *args, **kwargs):
+        super().__init__(genesis_block)
 
-    def add_block(self, block: BlockPoW):
+    def add_block(self, block):
         super().add_block(block)
-        assert isinstance(self.chain[-1], BlockPoW)
 
         if len(self.chain) >= 2:
             self._adjust_difficulty()
@@ -101,16 +107,15 @@ class BlockchainPow(_Blockchain):
             self.chain[-1].target_zeroes = 64
 
 
-class BlockchainPoFL(_Blockchain):
-    def __init__(self, seconds_to_mine, max_err, min_err):
-        super().__init__(BlockPoFL)
-        self.max_err = max_err if max_err else 0.5
-        self.min_err = min_err if min_err else 0.2
-        self.seconds_to_mine = seconds_to_mine if seconds_to_mine else 10
+class BlockchainPoFL(Blockchain[BlockPoFL]):
+    def __init__(self, genesis_block: BlockPoFL, *args, **kwargs):
+        super().__init__(genesis_block)
+        self.max_err = kwargs.get("max_err", 0.5)
+        self.min_err = kwargs.get("min_err", 0.2)
+        self.seconds_to_mine = kwargs.get("seconds_to_mine", 10)
 
-    def add_block(self, block: BlockPoFL):
+    def add_block(self, block):
         super().add_block(block)
-        assert isinstance(self.chain[-1], BlockPoFL)
 
         if len(self.chain) >= 2:
             self._adjust_difficulty()
@@ -134,13 +139,11 @@ class BlockchainPoFL(_Blockchain):
             self.chain[-1].target_err = self.min_err
 
 
-class BlockchainPoS(_Blockchain):
-    def __init__(self, seconds_to_mine):
-        super().__init__(BlockPoS)
-        self.seconds_to_mine = seconds_to_mine if seconds_to_mine else 10
+class BlockchainPoS(Blockchain[BlockPoS]):
+    def __init__(self, genesis_block: BlockPoS, *args, **kwargs):
+        super().__init__(genesis_block)
+        self.seconds_to_mine = kwargs.get("seconds_to_mine", 10)
 
-    def add_block(self, block: BlockPoS):
+    def add_block(self, block):
         super().add_block(block)
-        assert isinstance(self.chain[-1], BlockPoS)
-
         time.sleep(self.seconds_to_mine)

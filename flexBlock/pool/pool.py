@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 
 import random
-from typing import Callable
+from typing import Callable, Generic, TypeVar, Hashable, Dict
 
 import numpy as np
 from flex.actors.actors import FlexActors, FlexRole
@@ -14,7 +14,7 @@ from flex.pool import FlexPool
 import functools
 
 from flexBlock.blockchain.blockchain import (
-    _Blockchain,
+    Blockchain,
     BlockPoW,
     BlockchainPoS,
     BlockPoS,
@@ -23,22 +23,29 @@ from flexBlock.blockchain.blockchain import (
     BlockchainPoFL,
 )
 
-CLIENT_CONNS_BLOCKFED_TAG = "clients_connections"
-STAKE_BLOCKFED_TAG = "stake"
-INITIAL_STAKE = 32
+_CLIENT_CONNS_BLOCKFED_TAG = "clients_connections"
+_STAKE_BLOCKFED_TAG = "stake"
+_INITIAL_STAKE = 32
+
+_BlockchainType = TypeVar("_BlockchainType", bound=Blockchain)
 
 
-class _BlockchainPool(ABC):
-    def __init__(
+class BlockchainPool(ABC, Generic[_BlockchainType]):
+    _pool: FlexPool
+    _blockchain: _BlockchainType
+
+    def _initialize_pool(
         self,
-        blockType: type,
-        blockchain: _Blockchain,
+        blockchain: _BlockchainType,
         pool: FlexPool,
         **kwargs,
     ):
         self._pool = pool
         self._blockchain = blockchain
-        self._blockchain.add_block(blockType(weights=[]))
+
+    @property
+    def blockchain(self):
+        return self._blockchain
 
     @functools.cached_property
     def actor_ids(self):
@@ -81,20 +88,40 @@ class _BlockchainPool(ABC):
         for key in miners._models.keys():
             miners._models[key]["weights"] = total_weights
 
-    @abstractmethod
     def aggregate(
         self,
         agg_function: Callable,
+        gossip: bool = True,
         *args,
         **kwargs,
     ):
+        if gossip:
+            self.gossip()
+
+        selected_server = self._consensus_mechanism(
+            miners=self._pool.aggregators._models, **kwargs
+        )
+        agg_function(self.aggregators._models[selected_server], None)
+        weights = deepcopy(
+            self.aggregators._models[selected_server]["aggregated_weights"]
+        )
+        self._blockchain.add_block(self._pack_block(weights=weights))
+        for v in self.aggregators._models.values():
+            v["aggregated_weights"] = [deepcopy(weights)]
+
+    @abstractmethod
+    def _pack_block(self, weights):
+        pass
+
+    @abstractmethod
+    def _consensus_mechanism(self, miners: Dict[Hashable, FlexModel], **kwargs):
         pass
 
     def __len__(self):
         return len(self._pool)
 
 
-class PoWBlockchainPool(_BlockchainPool):
+class PoWBlockchainPool(BlockchainPool):
     def __init__(
         self,
         fed_dataset: FedDataset,
@@ -128,7 +155,7 @@ class PoWBlockchainPool(_BlockchainPool):
         for i in range(number_of_miners):
             server = models.get(f"server-{i+1}")
             assert isinstance(server, FlexModel)
-            server[CLIENT_CONNS_BLOCKFED_TAG] = partition[i]
+            server[_CLIENT_CONNS_BLOCKFED_TAG] = partition[i]
 
         for k in models:
             models[k].actor_id = k
@@ -140,24 +167,21 @@ class PoWBlockchainPool(_BlockchainPool):
             flex_models=models,
         )
 
-        bc = BlockchainPow() if "blockchain" not in kwargs else kwargs["blockchain"]
+        bc = (
+            BlockchainPow(BlockPoW([]), **kwargs)
+            if "blockchain" not in kwargs
+            else kwargs["blockchain"]
+        )
 
-        super().__init__(BlockPoW, bc, pool, **kwargs)
+        self._initialize_pool(bc, pool, **kwargs)
         self._pool.servers.map(init_func, **kwargs)
 
-    def aggregate(self, agg_function, *args, **kwargs):
-        selected_server = self._proof_of_work()
-        agg_function(self.aggregators._models[selected_server], None)
-        weights = deepcopy(
-            self.aggregators._models[selected_server]["aggregated_weights"]
-        )
-        self._blockchain.add_block(BlockPoW(weights=weights))
-        for v in self.aggregators._models.values():
-            v["weights"] = [deepcopy(weights)]
+    def _pack_block(self, weights):
+        return BlockPoW(weights=weights)
 
-    def _proof_of_work(self, *args, **kwargs):
-        miners = list(self._pool.aggregators._models.keys())
-        previous_block = self._blockchain.get_last_block()
+    def _consensus_mechanism(self, miners, **kwargs):
+        miner_keys = list(miners.keys())
+        previous_block = self.blockchain.get_last_block()
         selected_miner_index = 0
         nonce = 0
 
@@ -171,12 +195,12 @@ class PoWBlockchainPool(_BlockchainPool):
 
             nonce += 1
             selected_miner_index += 1
-            selected_miner_index %= len(miners)
+            selected_miner_index %= len(miner_keys)
 
-        return miners[selected_miner_index]
+        return miner_keys[selected_miner_index]
 
 
-class PoFLBlockchainPool(_BlockchainPool):
+class PoFLBlockchainPool(BlockchainPool):
     def __init__(
         self,
         fed_dataset: FedDataset,
@@ -186,80 +210,65 @@ class PoFLBlockchainPool(_BlockchainPool):
     ):
         pool = FlexPool.p2p_architecture(fed_dataset, init_func, **kwargs)
         bc = (
-            BlockchainPoFL(
-                max_err=kwargs.get("max_err"),
-                min_err=kwargs.get("min_err"),
-                seconds_to_mine=kwargs.get("seconds_to_mine"),
-            )
+            BlockchainPoFL(genesis_block=BlockPoFL([]), **kwargs)
             if "blockchain" not in kwargs
             else kwargs["blockchain"]
         )
 
         self._mining_dataset = mining_dataset
-        super().__init__(BlockPoFL, bc, pool, **kwargs)
+        self._initialize_pool(bc, pool, **kwargs)
 
-    def aggregate(
-        self,
-        agg_function: Callable,
-        eval_function: Callable,
-        train_function: Callable,
-        *args,
-        **kwargs,
-    ):
-        selected_server = self._proof_of_federated_learning(
-            eval_function, train_function, *args, **kwargs
-        )
-        agg_function(self.aggregators._models[selected_server], None)
-        weights = deepcopy(
-            self.aggregators._models[selected_server]["aggregated_weights"]
-        )
-        self._blockchain.add_block(BlockPoFL(weights=weights))
-        for v in self.aggregators._models.values():
-            v["weights"] = [deepcopy(weights)]
+    def _pack_block(self, weights):
+        return BlockPoFL(weights=weights)
 
-    def _proof_of_federated_learning(
-        self, eval_function: Callable, train_function: Callable, *args, **kwargs
-    ):
-        miners = list(self._pool.aggregators._models.keys())
+    def _consensus_mechanism(self, miners, **kwargs):
+        eval_function = kwargs.get("eval_function")
+        train_function = kwargs.get("train_function")
+
+        assert (
+            eval_function is not None
+        ), "eval_function must be provided to the aggregate method"
+        assert (
+            train_function is not None
+        ), "train_function must be provided to the aggregate method"
+
+        miner_keys = list(miners.keys())
         previous_block = self._blockchain.get_last_block()
         assert isinstance(previous_block, BlockPoFL)
         selected_miner_index = 0
 
         while True:
             train_function(
-                self.clients._models[miners[selected_miner_index]],
+                self.clients._models[miner_keys[selected_miner_index]],
                 self._mining_dataset,
-                *args,
-                **kwargs,
             )
 
             err = eval_function(
-                self.clients._models[miners[selected_miner_index]],
+                self.clients._models[miner_keys[selected_miner_index]],
                 self._mining_dataset,
-                *args,
-                **kwargs,
             )
             if err <= previous_block.target_err:
                 break
 
             selected_miner_index += 1
-            selected_miner_index %= len(miners)
+            selected_miner_index %= len(miner_keys)
 
-        return miners[selected_miner_index]
+        return miner_keys[selected_miner_index]
 
 
-class PoSBlockchainPool(_BlockchainPool):
+class PoSBlockchainPool(BlockchainPool):
     def __init__(
         self,
         fed_dataset: FedDataset,
         init_func: Callable,
-        initial_stake: int = INITIAL_STAKE,
+        initial_stake: int = _INITIAL_STAKE,
         **kwargs,
     ):
         pool = FlexPool.p2p_architecture(fed_dataset, init_func, **kwargs)
         bc = (
             BlockchainPoS(
-                seconds_to_mine=kwargs.get("seconds_to_mine"),
+                BlockPoS([]),
+                **kwargs,
             )
             if "blockchain" not in kwargs
             else kwargs["blockchain"]
@@ -267,33 +276,18 @@ class PoSBlockchainPool(_BlockchainPool):
 
         miners = list(pool.aggregators._models.values())
         for miner in miners:
-            miner[STAKE_BLOCKFED_TAG] = initial_stake
+            miner[_STAKE_BLOCKFED_TAG] = initial_stake
 
-        super().__init__(BlockPoS, bc, pool, **kwargs)
+        self._initialize_pool(bc, pool, **kwargs)
 
-    def aggregate(
-        self,
-        agg_function: Callable,
-        *args,
-        **kwargs,
-    ):
-        selected_miner = self._proof_of_stake(*args, **kwargs)
-        agg_function(self.aggregators._models[selected_miner], None)
-        weights = deepcopy(
-            self.aggregators._models[selected_miner]["aggregated_weights"]
-        )
-        self._blockchain.add_block(BlockPoS(weights=weights))
+    def _pack_block(self, weights):
+        return BlockPoS(weights=weights)
 
-        for v in self.aggregators._models.values():
-            v["weights"] = [deepcopy(weights)]
-
-        self.aggregators._models[selected_miner][STAKE_BLOCKFED_TAG] += 1
-
-    def _proof_of_stake(self, *args, **kwargs):
-        key_stake = [
-            (k, m.get(STAKE_BLOCKFED_TAG))
-            for k, m in self._pool.aggregators._models.items()
-        ]
+    def _consensus_mechanism(self, miners, **kwargs):
+        key_stake = [(k, m.get(_STAKE_BLOCKFED_TAG)) for k, m in miners.items()]
 
         key_stake = list(filter(lambda x: x[1] and x[1] > 0, key_stake))
-        return random.choices(key_stake, [s for _, s in key_stake])[0][0]
+        selected_miner = random.choices(key_stake, [s for _, s in key_stake])[0][0]
+        self.aggregators._models[selected_miner][_STAKE_BLOCKFED_TAG] += 1
+
+        return selected_miner

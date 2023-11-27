@@ -14,6 +14,6 @@ def collect_to_send_wrapper(func):
 
     @send_weights_to_miner
     def wrapped(model: FlexModel, *args, **kwargs):
-        return func.__wrapped__(model, args=args, kwargs=kwargs)
+        return func.__wrapped__(model, *args, **kwargs)
 
     return wrapped
