@@ -6,6 +6,7 @@ import random
 from typing import Callable, Generic, TypeVar, Hashable, Dict
 
 import numpy as np
+from numpy.random import permutation
 from flex.actors.actors import FlexActors, FlexRole
 from flex.data import FedDataset, Dataset
 from flex.model.model import FlexModel
@@ -23,7 +24,7 @@ from flexBlock.blockchain.blockchain import (
     BlockchainPoFL,
 )
 
-_CLIENT_CONNS_BLOCKFED_TAG = "clients_connections"
+CLIENT_CONNECTIONS = "clients_connections"
 _STAKE_BLOCKFED_TAG = "stake"
 _INITIAL_STAKE = 32
 
@@ -34,7 +35,7 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
     _pool: FlexPool
     _blockchain: _BlockchainType
 
-    def _initialize_pool(
+    def initialize_pool(
         self,
         blockchain: _BlockchainType,
         pool: FlexPool,
@@ -98,23 +99,23 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         if gossip:
             self.gossip()
 
-        selected_server = self._consensus_mechanism(
+        selected_server = self.consensus_mechanism(
             miners=self._pool.aggregators._models, **kwargs
         )
         agg_function(self.aggregators._models[selected_server], None)
         weights = deepcopy(
             self.aggregators._models[selected_server]["aggregated_weights"]
         )
-        self._blockchain.add_block(self._pack_block(weights=weights))
+        self._blockchain.add_block(self.pack_block(weights=weights))
         for v in self.aggregators._models.values():
             v["aggregated_weights"] = [deepcopy(weights)]
 
     @abstractmethod
-    def _pack_block(self, weights):
+    def pack_block(self, weights):
         pass
 
     @abstractmethod
-    def _consensus_mechanism(self, miners: Dict[Hashable, FlexModel], **kwargs):
+    def consensus_mechanism(self, miners: Dict[Hashable, FlexModel], **kwargs):
         pass
 
     def __len__(self):
@@ -129,14 +130,6 @@ class PoWBlockchainPool(BlockchainPool):
         init_func: Callable,
         **kwargs,
     ):
-        # TODO: Separate this into other functions
-
-        if "server" in fed_dataset.keys():
-            # TODO: Change this to another message
-            raise ValueError(
-                "The name 'server' is reserved only for the server in a client-server architecture."
-            )
-
         if number_of_miners < 1:
             raise ValueError("The number of nodes must be at least 1")
 
@@ -144,21 +137,8 @@ class PoWBlockchainPool(BlockchainPool):
         actors = FlexActors(
             {actor_id: FlexRole.client for actor_id in fed_dataset.keys()}
         )
-        actor_keys = [key for key in actors.keys()]
-        random.shuffle(actor_keys)
-        partition = np.array_split(actor_keys, number_of_miners)
 
-        for i in range(number_of_miners):
-            actors[f"server-{i+1}"] = FlexRole.server_aggregator
-
-        models = {k: FlexModel() for k in actors}
-        for i in range(number_of_miners):
-            server = models.get(f"server-{i+1}")
-            assert isinstance(server, FlexModel)
-            server[_CLIENT_CONNS_BLOCKFED_TAG] = partition[i]
-
-        for k in models:
-            models[k].actor_id = k
+        actors, models = self._create_miners(actors, number_of_miners)
 
         # Create pool and initialize servers
         pool = FlexPool(
@@ -167,19 +147,42 @@ class PoWBlockchainPool(BlockchainPool):
             flex_models=models,
         )
 
+        pool.servers.map(init_func, **kwargs)
+
         bc = (
             BlockchainPow(BlockPoW([]), **kwargs)
             if "blockchain" not in kwargs
             else kwargs["blockchain"]
         )
 
-        self._initialize_pool(bc, pool, **kwargs)
-        self._pool.servers.map(init_func, **kwargs)
+        self.initialize_pool(bc, pool, **kwargs)
 
-    def _pack_block(self, weights):
+    def _create_miners(self, actors: FlexActors, number_of_miners: int):
+        # Create miners
+        for i in range(number_of_miners):
+            actors[f"server-{i+1}"] = FlexRole.server_aggregator
+
+        # Populates actors with miners
+        shuffled_actor_keys = permutation([key for key in actors.keys()])
+        partition = np.array_split(shuffled_actor_keys, number_of_miners)
+
+        models = {k: FlexModel() for k in actors}
+
+        for i in range(number_of_miners):
+            server = models.get(f"server-{i+1}")
+            assert isinstance(server, FlexModel)
+            server[CLIENT_CONNECTIONS] = partition[i]
+
+        for k in models:
+            # Store the key in the model so we can retrieve it later
+            models[k].actor_id = k
+
+        return actors, models
+
+    def pack_block(self, weights):
         return BlockPoW(weights=weights)
 
-    def _consensus_mechanism(self, miners, **kwargs):
+    def consensus_mechanism(self, miners, **kwargs):
         miner_keys = list(miners.keys())
         previous_block = self.blockchain.get_last_block()
         selected_miner_index = 0
@@ -216,12 +219,12 @@ class PoFLBlockchainPool(BlockchainPool):
         )
 
         self._mining_dataset = mining_dataset
-        self._initialize_pool(bc, pool, **kwargs)
+        self.initialize_pool(bc, pool, **kwargs)
 
-    def _pack_block(self, weights):
+    def pack_block(self, weights):
         return BlockPoFL(weights=weights)
 
-    def _consensus_mechanism(self, miners, **kwargs):
+    def consensus_mechanism(self, miners, **kwargs):
         eval_function = kwargs.get("eval_function")
         train_function = kwargs.get("train_function")
 
@@ -278,12 +281,12 @@ class PoSBlockchainPool(BlockchainPool):
         for miner in miners:
             miner[_STAKE_BLOCKFED_TAG] = initial_stake
 
-        self._initialize_pool(bc, pool, **kwargs)
+        self.initialize_pool(bc, pool, **kwargs)
 
-    def _pack_block(self, weights):
+    def pack_block(self, weights):
         return BlockPoS(weights=weights)
 
-    def _consensus_mechanism(self, miners, **kwargs):
+    def consensus_mechanism(self, miners, **kwargs):
         key_stake = [(k, m.get(_STAKE_BLOCKFED_TAG)) for k, m in miners.items()]
 
         key_stake = list(filter(lambda x: x[1] and x[1] > 0, key_stake))
