@@ -1,10 +1,9 @@
-from dataclasses import dataclass
-from typing import TypeVar
-from abc import abstractmethod, ABC
-from typing import List, Generic
-from hashlib import sha256
 import random
 import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from hashlib import sha256
+from typing import Generic, List, TypeVar
 
 
 @dataclass
@@ -39,12 +38,10 @@ class BlockPoW(Block):
 class BlockPoFL(Block):
     def __init__(self, weights):
         super().__init__(weights)
-        # Default value
-        self.target_err = 0.3
 
     def compute_hash(self):
         hashed_weights = sha256(bytes(self.weights)).hexdigest()
-        return sha256((self._previous_hash + hashed_weights).encode()).hexdigest()
+        return hashed_weights
 
 
 @dataclass
@@ -110,33 +107,9 @@ class BlockchainPow(Blockchain[BlockPoW]):
 class BlockchainPoFL(Blockchain[BlockPoFL]):
     def __init__(self, genesis_block: BlockPoFL, *args, **kwargs):
         super().__init__(genesis_block)
-        self.max_err = kwargs.get("max_err", 0.5)
-        self.min_err = kwargs.get("min_err", 0.2)
-        self.seconds_to_mine = kwargs.get("seconds_to_mine", 10)
 
     def add_block(self, block):
         super().add_block(block)
-
-        if len(self.chain) >= 2:
-            self._adjust_difficulty()
-        else:
-            self.chain[-1].target_err = self.max_err
-
-    def _adjust_difficulty(self):
-        last_block = self.chain[-1]
-        previous_block = self.chain[-2]
-
-        # If the last block took more than expected to mine, decrease difficulty
-        diff_time = float(last_block.timestamp - previous_block.timestamp) / 1e8
-        if diff_time < self.seconds_to_mine:
-            self.chain[-1].target_err = previous_block.target_err - 0.05
-        else:
-            self.chain[-1].target_err = previous_block.target_err + 0.05
-
-        if self.chain[-1].target_err > self.max_err:
-            self.chain[-1].target_err = self.max_err
-        if self.chain[-1].target_err < self.min_err:
-            self.chain[-1].target_err = self.min_err
 
 
 class BlockchainPoS(Blockchain[BlockPoS]):

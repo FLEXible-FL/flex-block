@@ -1,34 +1,42 @@
 from __future__ import annotations
+from dataclasses import dataclass
+
+import functools
+import random
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from typing import Callable, Dict, Generic, Hashable, Optional, TypeVar
 
-import random
-from typing import Callable, Generic, TypeVar, Hashable, Dict
-
-import numpy as np
-from numpy.random import permutation
 from flex.actors.actors import FlexActors, FlexRole
-from flex.data import FedDataset, Dataset
+from flex.data import Dataset, FedDataset
 from flex.model.model import FlexModel
 from flex.pool import FlexPool
 
-import functools
-
 from flexBlock.blockchain.blockchain import (
     Blockchain,
-    BlockPoW,
+    BlockchainPoFL,
     BlockchainPoS,
-    BlockPoS,
     BlockchainPow,
     BlockPoFL,
-    BlockchainPoFL,
+    BlockPoS,
+    BlockPoW,
 )
+from flexBlock.pool.utils import create_miners
 
 CLIENT_CONNECTIONS = "clients_connections"
 _STAKE_BLOCKFED_TAG = "stake"
 _INITIAL_STAKE = 32
 
 _BlockchainType = TypeVar("_BlockchainType", bound=Blockchain)
+
+
+@dataclass(frozen=True)
+class PoolConfig:
+    gossip_on_agg: bool = True
+    aggregate_before_acc: bool = False
+
+
+_default_pool_config = PoolConfig()
 
 
 class BlockchainPool(ABC, Generic[_BlockchainType]):
@@ -39,10 +47,12 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         self,
         blockchain: _BlockchainType,
         pool: FlexPool,
+        config: PoolConfig = _default_pool_config,
         **kwargs,
     ):
         self._pool = pool
         self._blockchain = blockchain
+        self._config = config
 
     @property
     def blockchain(self):
@@ -79,7 +89,7 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         """
         return self._pool.servers
 
-    def gossip(self):
+    def _gossip(self):
         """Gossiping mechanism for the pool. The miners will share the weights of their clients with each other."""
         miners = self._pool.aggregators
         total_weights = [
@@ -92,16 +102,21 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
     def aggregate(
         self,
         agg_function: Callable,
-        gossip: bool = True,
-        *args,
         **kwargs,
     ):
-        if gossip:
-            self.gossip()
+        if self._config.gossip_on_agg:
+            self._gossip()
+
+        if self._config.aggregate_before_acc:
+            [agg_function(v, None) for v in self.aggregators._models.values()]
 
         selected_server = self.consensus_mechanism(
             miners=self._pool.aggregators._models, **kwargs
         )
+
+        if selected_server is None:
+            return False
+
         agg_function(self.aggregators._models[selected_server], None)
         weights = deepcopy(
             self.aggregators._models[selected_server]["aggregated_weights"]
@@ -110,12 +125,16 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         for v in self.aggregators._models.values():
             v["aggregated_weights"] = [deepcopy(weights)]
 
+        return True
+
     @abstractmethod
     def pack_block(self, weights):
         pass
 
     @abstractmethod
-    def consensus_mechanism(self, miners: Dict[Hashable, FlexModel], **kwargs):
+    def consensus_mechanism(
+        self, miners: Dict[Hashable, FlexModel], **kwargs
+    ) -> Optional[Hashable]:
         pass
 
     def __len__(self):
@@ -138,7 +157,7 @@ class PoWBlockchainPool(BlockchainPool):
             {actor_id: FlexRole.client for actor_id in fed_dataset.keys()}
         )
 
-        actors, models = self._create_miners(actors, number_of_miners)
+        actors, models = create_miners(actors, number_of_miners)
 
         # Create pool and initialize servers
         pool = FlexPool(
@@ -156,28 +175,6 @@ class PoWBlockchainPool(BlockchainPool):
         )
 
         self.initialize_pool(bc, pool, **kwargs)
-
-    def _create_miners(self, actors: FlexActors, number_of_miners: int):
-        # Create miners
-        for i in range(number_of_miners):
-            actors[f"server-{i+1}"] = FlexRole.server_aggregator
-
-        # Populates actors with miners
-        shuffled_actor_keys = permutation([key for key in actors.keys()])
-        partition = np.array_split(shuffled_actor_keys, number_of_miners)
-
-        models = {k: FlexModel() for k in actors}
-
-        for i in range(number_of_miners):
-            server = models.get(f"server-{i+1}")
-            assert isinstance(server, FlexModel)
-            server[CLIENT_CONNECTIONS] = partition[i]
-
-        for k in models:
-            # Store the key in the model so we can retrieve it later
-            models[k].actor_id = k
-
-        return actors, models
 
     def pack_block(self, weights):
         return BlockPoW(weights=weights)
@@ -208,55 +205,64 @@ class PoFLBlockchainPool(BlockchainPool):
         self,
         fed_dataset: FedDataset,
         init_func: Callable,
-        mining_dataset: Dataset,
+        number_of_miners: int,
         **kwargs,
     ):
-        pool = FlexPool.p2p_architecture(fed_dataset, init_func, **kwargs)
+        if number_of_miners < 1:
+            raise ValueError("The number of nodes must be at least 1")
+
+        # Split clients between miners
+        actors = FlexActors(
+            {actor_id: FlexRole.client for actor_id in fed_dataset.keys()}
+        )
+
+        actors, models = create_miners(actors, number_of_miners)
+
+        # Create pool and initialize servers
+        pool = FlexPool(
+            flex_data=fed_dataset,
+            flex_actors=actors,
+            flex_models=models,
+        )
+
+        pool.servers.map(init_func, **kwargs)
+
         bc = (
             BlockchainPoFL(genesis_block=BlockPoFL([]), **kwargs)
             if "blockchain" not in kwargs
             else kwargs["blockchain"]
         )
 
-        self._mining_dataset = mining_dataset
-        self.initialize_pool(bc, pool, **kwargs)
+        self.initialize_pool(
+            bc,
+            pool,
+            config=PoolConfig(gossip_on_agg=False, aggregate_before_acc=True),
+            **kwargs,
+        )
 
     def pack_block(self, weights):
         return BlockPoFL(weights=weights)
 
     def consensus_mechanism(self, miners, **kwargs):
         eval_function = kwargs.get("eval_function")
-        train_function = kwargs.get("train_function")
+        eval_dataset = kwargs.get("eval_dataset")
+        accuracy_threshold = kwargs.get("accuracy")
+        # TODO: Think how to implement a training loop here
 
         assert (
             eval_function is not None
         ), "eval_function must be provided to the aggregate method"
-        assert (
-            train_function is not None
-        ), "train_function must be provided to the aggregate method"
+        assert isinstance(
+            eval_dataset, Dataset
+        ), "eval_dataset must be provided to the aggregate method"
+        assert accuracy_threshold is not None, "accuracy goal must be provided"
 
-        miner_keys = list(miners.keys())
-        previous_block = self._blockchain.get_last_block()
-        assert isinstance(previous_block, BlockPoFL)
-        selected_miner_index = 0
+        for miner, model in miners.items():
+            acc = eval_function(model, eval_dataset)
+            if acc >= accuracy_threshold:
+                return miner
 
-        while True:
-            train_function(
-                self.clients._models[miner_keys[selected_miner_index]],
-                self._mining_dataset,
-            )
-
-            err = eval_function(
-                self.clients._models[miner_keys[selected_miner_index]],
-                self._mining_dataset,
-            )
-            if err <= previous_block.target_err:
-                break
-
-            selected_miner_index += 1
-            selected_miner_index %= len(miner_keys)
-
-        return miner_keys[selected_miner_index]
+        return None
 
 
 class PoSBlockchainPool(BlockchainPool):
