@@ -32,6 +32,7 @@ _BlockchainType = TypeVar("_BlockchainType", bound=Blockchain)
 
 @dataclass(frozen=True)
 class PoolConfig:
+    gossip_before_agg: bool = True
     gossip_on_agg: bool = True
     aggregate_before_acc: bool = False
 
@@ -104,7 +105,7 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         agg_function: Callable,
         **kwargs,
     ):
-        if self._config.gossip_on_agg:
+        if self._config.gossip_before_agg:
             self._gossip()
 
         if self._config.aggregate_before_acc:
@@ -116,6 +117,9 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
 
         if selected_server is None:
             return False
+
+        if self._config.gossip_on_agg:
+            self._gossip()
 
         agg_function(self.aggregators._models[selected_server], None)
         weights = deepcopy(
@@ -233,10 +237,14 @@ class PoFLBlockchainPool(BlockchainPool):
             else kwargs["blockchain"]
         )
 
+        config = PoolConfig(
+            gossip_before_agg=False, aggregate_before_acc=True, gossip_on_agg=False
+        )
+
         self.initialize_pool(
             bc,
             pool,
-            config=PoolConfig(gossip_on_agg=False, aggregate_before_acc=True),
+            config=config,
             **kwargs,
         )
 
