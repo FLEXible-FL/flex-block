@@ -157,7 +157,7 @@ class PoWBlockchainPool(BlockchainPool):
             {actor_id: FlexRole.client for actor_id in fed_dataset.keys()}
         )
 
-        actors, models = create_miners(actors, number_of_miners)
+        actors, models = create_miners(actors, number_of_miners, CLIENT_CONNECTIONS)
 
         # Create pool and initialize servers
         pool = FlexPool(
@@ -216,7 +216,7 @@ class PoFLBlockchainPool(BlockchainPool):
             {actor_id: FlexRole.client for actor_id in fed_dataset.keys()}
         )
 
-        actors, models = create_miners(actors, number_of_miners)
+        actors, models = create_miners(actors, number_of_miners, CLIENT_CONNECTIONS)
 
         # Create pool and initialize servers
         pool = FlexPool(
