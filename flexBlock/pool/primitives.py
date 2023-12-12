@@ -1,4 +1,5 @@
 from flex.model import FlexModel
+
 from flexBlock.pool.decorators import send_weights_to_miner
 
 
