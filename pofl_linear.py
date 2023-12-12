@@ -9,10 +9,7 @@ from sklearn.datasets import load_diabetes
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 
-from flexBlock.pool import (
-    PoFLBlockchainPool,
-    send_weights_to_miner,
-)
+from flexBlock.pool import PoFLBlockchainPool, send_weights_to_miner
 
 
 @aggregate_weights
@@ -62,8 +59,6 @@ federated_diabetes = FedDataDistribution.iid_distribution(train_diabetes, n_clie
 p = PoFLBlockchainPool(
     fed_dataset=federated_diabetes,
     init_func=build_server_model,
-    mining_dataset=train_diabetes,
-    min_err=0.38,
 )
 
 servers = p.servers
@@ -77,10 +72,15 @@ for _ in range(10):
     servers.map(copy_server_model_to_clients, clients)
     clients.map(train)
     aggregators.map(get_clients_weights, clients)
-    p.gossip()
+    p._gossip()
 
     # Aggregate weights
-    p.aggregate(aggregate, eval_function=evaluate_model, train_function=train)
+    p.aggregate(
+        aggregate,
+        eval_function=evaluate_model,
+        acc_threshold=0.70,
+        eval_dataset=test_diabetes,
+    )
     pprint.pprint(aggregators._models)
 
     block = p._blockchain.chain[-1]

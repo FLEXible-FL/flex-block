@@ -9,11 +9,7 @@ from sklearn.datasets import load_diabetes
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 
-from flexBlock.pool import (
-    PoWBlockchainPool,
-    send_weights_to_miner,
-    validate_models,
-)
+from flexBlock.pool import PoWBlockchainPool, send_weights_to_miner, validate_models
 
 
 @aggregate_weights
@@ -75,7 +71,7 @@ for _ in range(17):
     clients.map(train)
     aggregators.map(get_clients_weights, clients)
     aggregators.map(validate_all_models, clients)
-    p.gossip()
+    p._gossip()
 
     # Aggregate weights
     p.aggregate(aggregate)
