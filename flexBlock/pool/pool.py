@@ -255,7 +255,7 @@ class PoFLBlockchainPool(BlockchainPool):
     def consensus_mechanism(self, miners, **kwargs):
         eval_function = kwargs.get("eval_function")
         eval_dataset = kwargs.get("eval_dataset")
-        accuracy_threshold = kwargs.get("accuracy")
+        accuracy = kwargs.get("accuracy")
         # TODO: Think how to implement a training loop here
 
         assert (
@@ -264,11 +264,11 @@ class PoFLBlockchainPool(BlockchainPool):
         assert isinstance(
             eval_dataset, Dataset
         ), "eval_dataset must be provided to the aggregate method"
-        assert accuracy_threshold is not None, "accuracy goal must be provided"
+        assert accuracy is not None, "accuracy must be provided"
 
         for miner, model in miners.items():
             acc = eval_function(model, eval_dataset)
-            if acc >= accuracy_threshold:
+            if acc >= accuracy:
                 return miner
 
         return None
