@@ -104,13 +104,24 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
     def aggregate(
         self,
         agg_function: Callable,
+        set_weights: Callable,
         **kwargs,
     ):
         if self._config.gossip_before_agg:
             self._gossip()
 
         if self._config.aggregate_before_acc:
-            [agg_function(v, None) for v in self.aggregators._models.values()]
+            for v in self.aggregators._models.values():
+                # aggregate weights and set them to the model of the aggregator
+                # We also need to save a copy of weights to restore them later (agg_function removes them)
+                weights = deepcopy(v["weights"])
+                agg_function(v, None)
+                v["weights"] = weights
+                agg_pool = self.aggregators.select(
+                    lambda actor_id, _: actor_id == v.actor_id
+                )
+
+                agg_pool.map(set_weights, self.servers)
 
         selected_server = self.consensus_mechanism(
             miners=self._pool.aggregators._models, **kwargs
@@ -128,7 +139,9 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         )
         self._blockchain.add_block(self.pack_block(weights=weights))
         for v in self.aggregators._models.values():
-            v["aggregated_weights"] = [deepcopy(weights)]
+            v["aggregated_weights"] = deepcopy(weights)
+
+        self.aggregators.map(set_weights, self.servers)
 
         return True
 
@@ -256,7 +269,6 @@ class PoFLBlockchainPool(BlockchainPool):
         eval_function = kwargs.get("eval_function")
         eval_dataset = kwargs.get("eval_dataset")
         accuracy = kwargs.get("accuracy")
-        # TODO: Think how to implement a training loop here
 
         assert (
             eval_function is not None
