@@ -43,6 +43,7 @@ _default_pool_config = PoolConfig()
 class BlockchainPool(ABC, Generic[_BlockchainType]):
     _pool: FlexPool
     _blockchain: _BlockchainType
+    _config: PoolConfig
 
     def initialize_pool(
         self,
