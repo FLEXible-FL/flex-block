@@ -121,7 +121,7 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
                     lambda actor_id, _: actor_id == v.actor_id
                 )
 
-                agg_pool.map(set_weights, self.servers)
+                agg_pool.map(set_weights, agg_pool)
 
         selected_server = self.consensus_mechanism(
             miners=self._pool.aggregators._models, **kwargs
@@ -278,12 +278,17 @@ class PoFLBlockchainPool(BlockchainPool):
         ), "eval_dataset must be provided to the aggregate method"
         assert accuracy is not None, "accuracy must be provided"
 
+        valid_miners = []
+
         for miner, model in miners.items():
             acc = eval_function(model, eval_dataset)
             if acc >= accuracy:
+                valid_miners.append((miner, acc))
                 return miner
-
-        return None
+        
+        valid_miners.sort(key=lambda x: x[1])
+        
+        return valid_miners[-1][0] if len(valid_miners) > 0 else None
 
 
 class PoSBlockchainPool(BlockchainPool):
