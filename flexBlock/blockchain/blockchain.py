@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Generic, List, TypeVar
+import numpy as np
+import torch
 
 
 @dataclass
@@ -19,6 +21,19 @@ class Block(ABC):
     def compute_hash(self):
         pass
 
+    @classmethod
+    def hash_weights(cls, weights) -> str:
+        if isinstance(weights, torch.Tensor):
+            return cls.hash_weights(weights.cpu().numpy())
+        
+        if isinstance(weights, np.ndarray):
+            return sha256(weights.tobytes()).hexdigest()
+            
+        if isinstance(weights, list):
+            return "".join([cls.hash_weights(w) for w in weights])
+        
+        return sha256(bytes(weights)).hexdigest()
+
 
 @dataclass
 class BlockPoW(Block):
@@ -28,7 +43,7 @@ class BlockPoW(Block):
         self.target_zeroes = 3
 
     def compute_hash(self, nonce=None):
-        hashed_weights = sha256(bytes(self.weights)).hexdigest()
+        hashed_weights = self.hash_weights(self.weights)
         if nonce:
             hashed_weights += str(nonce)
         return sha256((self._previous_hash + hashed_weights).encode()).hexdigest()
@@ -40,8 +55,7 @@ class BlockPoFL(Block):
         super().__init__(weights)
 
     def compute_hash(self):
-        hashed_weights = sha256(bytes(self.weights)).hexdigest()
-        return hashed_weights
+        return self.hash_weights(self.weights)
 
 
 @dataclass
@@ -50,8 +64,7 @@ class BlockPoS(Block):
         super().__init__(weights)
 
     def compute_hash(self):
-        # hashed_weights = sha256(bytes(self.weights)).hexdigest()
-        hashed_weights = sha256(bytes("hello world lol".encode())).hexdigest()
+        hashed_weights = self.hash_weights(self.weights)
         return sha256((self._previous_hash + hashed_weights).encode()).hexdigest()
 
 
