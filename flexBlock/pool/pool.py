@@ -22,6 +22,7 @@ from flexBlock.blockchain.blockchain import (
     BlockPoW,
 )
 from flexBlock.pool.utils import create_miners
+from flexBlock.common import DEBUG
 
 CLIENT_CONNECTIONS = "clients_connections"
 _STAKE_BLOCKFED_TAG = "stake"
@@ -215,6 +216,7 @@ class PoWBlockchainPool(BlockchainPool):
             selected_miner_index += 1
             selected_miner_index %= len(miner_keys)
 
+        if DEBUG >= 1: print(f"[PoW] selected miner: {miner_keys[selected_miner_index]:10} nonce: {nonce}")
         return miner_keys[selected_miner_index]
 
 
@@ -283,6 +285,7 @@ class PoFLBlockchainPool(BlockchainPool):
         for miner, model in miners.items():
             acc = eval_function(model, eval_dataset)
             if acc >= accuracy:
+                if DEBUG >= 1: print(f"[POFL] miner: {miner: 10} acc: {acc}")
                 valid_miners.append((miner, acc))
                 return miner
         
@@ -323,6 +326,7 @@ class PoSBlockchainPool(BlockchainPool):
 
         key_stake = list(filter(lambda x: x[1] and x[1] > 0, key_stake))
         selected_miner = random.choices(key_stake, [s for _, s in key_stake])[0][0]
+        if DEBUG >= 1: print(f"[PoS] selected miner: {selected_miner: 10} stake: {self.aggregators._models[selected_miner][_STAKE_BLOCKFED_TAG]}")
         self.aggregators._models[selected_miner][_STAKE_BLOCKFED_TAG] += 1
 
         return selected_miner
