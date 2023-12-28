@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Generic, List, TypeVar
+
 import numpy as np
 import torch
 

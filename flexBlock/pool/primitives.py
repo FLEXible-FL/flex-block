@@ -1,6 +1,5 @@
 from flex.model import FlexModel
-
-from flexBlock.pool.decorators import send_weights_to_miner, deploy_miner_model
+from flexBlock.pool.decorators import deploy_miner_model, send_weights_to_miner
 
 
 def collect_to_send_wrapper(func):
