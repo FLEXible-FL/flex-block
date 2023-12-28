@@ -1,28 +1,21 @@
 from __future__ import annotations
-from dataclasses import dataclass
 
 import functools
 import random
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Callable, Dict, Generic, Hashable, Optional, TypeVar
 
 from flex.actors.actors import FlexActors, FlexRole
 from flex.data import Dataset, FedDataset
 from flex.model.model import FlexModel
 from flex.pool import FlexPool
-
-from flexBlock.blockchain.blockchain import (
-    Blockchain,
-    BlockchainPoFL,
-    BlockchainPoS,
-    BlockchainPow,
-    BlockPoFL,
-    BlockPoS,
-    BlockPoW,
-)
-from flexBlock.pool.utils import create_miners
+from flexBlock.blockchain.blockchain import (Blockchain, BlockchainPoFL,
+                                             BlockchainPoS, BlockchainPow,
+                                             BlockPoFL, BlockPoS, BlockPoW)
 from flexBlock.common import DEBUG
+from flexBlock.pool.utils import create_miners
 
 CLIENT_CONNECTIONS = "clients_connections"
 _STAKE_BLOCKFED_TAG = "stake"
@@ -131,7 +124,7 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         if selected_server is None:
             return False
 
-        if self._config.gossip_on_agg:
+        if self._config.gossip_on_agg and not self._config.gossip_before_agg:
             self._gossip()
 
         agg_function(self.aggregators._models[selected_server], None)
@@ -141,6 +134,7 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         self._blockchain.add_block(self.pack_block(weights=weights))
         for v in self.aggregators._models.values():
             v["aggregated_weights"] = deepcopy(weights)
+            v["weights"] = []
 
         self.aggregators.map(set_weights, self.servers)
 
@@ -164,8 +158,8 @@ class PoWBlockchainPool(BlockchainPool):
     def __init__(
         self,
         fed_dataset: FedDataset,
-        number_of_miners: int,
         init_func: Callable,
+        number_of_miners: int,
         **kwargs,
     ):
         if number_of_miners < 1:
@@ -193,7 +187,9 @@ class PoWBlockchainPool(BlockchainPool):
             else kwargs["blockchain"]
         )
 
-        self.initialize_pool(bc, pool, **kwargs)
+        config = PoolConfig(gossip_before_agg=False, gossip_on_agg=True, aggregate_before_acc=False)
+
+        self.initialize_pool(bc, pool, config, **kwargs)
 
     def pack_block(self, weights):
         return BlockPoW(weights=weights)
@@ -302,7 +298,7 @@ class PoSBlockchainPool(BlockchainPool):
         initial_stake: int = _INITIAL_STAKE,
         **kwargs,
     ):
-        pool = FlexPool.p2p_architecture(fed_dataset, init_func, **kwargs)
+        pool = FlexPool.p2p_pool(fed_dataset, init_func, **kwargs)
         bc = (
             BlockchainPoS(
                 BlockPoS([]),
