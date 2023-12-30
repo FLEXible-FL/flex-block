@@ -109,7 +109,7 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
                 # aggregate weights and set them to the model of the aggregator
                 # We also need to save a copy of weights to restore them later (agg_function removes them)
                 if len(v["weights"]) == 0:
-                    pass # The miner did not collect any weights 
+                    continue # The miner did not collect any weights 
 
                 weights = deepcopy(v["weights"])
                 agg_function(v, None)
