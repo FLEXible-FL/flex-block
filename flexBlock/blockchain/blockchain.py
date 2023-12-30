@@ -6,7 +6,6 @@ from hashlib import sha256
 from typing import Generic, List, TypeVar
 
 import numpy as np
-import torch
 
 
 @dataclass
@@ -24,8 +23,12 @@ class Block(ABC):
 
     @classmethod
     def hash_weights(cls, weights) -> str:
-        if isinstance(weights, torch.Tensor):
-            return cls.hash_weights(weights.cpu().numpy())
+        try:
+            import torch
+            if isinstance(weights, torch.Tensor):
+                return cls.hash_weights(weights.cpu().numpy())
+        except ImportError:
+            pass
         
         if isinstance(weights, np.ndarray):
             return sha256(weights.tobytes()).hexdigest()
