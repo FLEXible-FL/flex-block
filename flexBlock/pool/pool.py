@@ -28,7 +28,7 @@ _BlockchainType = TypeVar("_BlockchainType", bound=Blockchain)
 class PoolConfig:
     gossip_before_agg: bool = True
     gossip_on_agg: bool = True
-    aggregate_before_acc: bool = False
+    aggregate_before_agg: bool = False
 
 
 _default_pool_config = PoolConfig()
@@ -104,9 +104,9 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         if self._config.gossip_before_agg:
             self._gossip()
 
-        if self._config.aggregate_before_acc:
+        if self._config.aggregate_before_agg:
             for v in self.aggregators._models.values():
-                # aggregate weights and set them to the model of the aggregator
+                # aggregate weights and set them to the aggregator's model
                 # We also need to save a copy of weights to restore them later (agg_function removes them)
                 if len(v["weights"]) == 0:
                     continue # The miner did not collect any weights 
@@ -194,7 +194,7 @@ class PoWBlockchainPool(BlockchainPool):
             else kwargs["blockchain"]
         )
 
-        config = PoolConfig(gossip_before_agg=False, gossip_on_agg=True, aggregate_before_acc=False)
+        config = PoolConfig(gossip_before_agg=False, gossip_on_agg=True, aggregate_before_agg=False)
 
         self.initialize_pool(bc, pool, config, **kwargs)
 
@@ -257,7 +257,7 @@ class PoFLBlockchainPool(BlockchainPool):
         )
 
         config = PoolConfig(
-            gossip_before_agg=False, aggregate_before_acc=True, gossip_on_agg=False
+            gossip_before_agg=False, aggregate_before_agg=True, gossip_on_agg=False
         )
 
         self.initialize_pool(
@@ -288,9 +288,8 @@ class PoFLBlockchainPool(BlockchainPool):
         for miner, model in miners.items():
             acc = eval_function(model, eval_dataset)
             if acc >= accuracy:
-                if DEBUG >= 1: print(f"[POFL] miner: {miner: 10} acc: {acc}")
+                if DEBUG >= 1: print(f"[POFL] miner: {miner:10} acc: {acc}")
                 valid_miners.append((miner, acc))
-                return miner
         
         valid_miners.sort(key=lambda x: x[1])
         

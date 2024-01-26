@@ -170,3 +170,6 @@ data/
 
 # Slurm
 *.out
+
+# Experiments
+experiments/

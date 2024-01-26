@@ -1,2 +1,1 @@
-from flexBlock import pool
-from flexBlock import blockchain
+from flexBlock import blockchain, pool
