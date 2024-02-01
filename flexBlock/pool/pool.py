@@ -28,7 +28,11 @@ _BlockchainType = TypeVar("_BlockchainType", bound=Blockchain)
 class PoolConfig:
     gossip_before_agg: bool = True
     gossip_on_agg: bool = True
+    gossip_selected_only: bool = False
     aggregate_before_agg: bool = False
+
+    def __post_init__(self):
+        assert not (self.gossip_selected_only and self.gossip_before_agg), "Cannot gossip only to selected before aggregation"
 
 
 _default_pool_config = PoolConfig()
@@ -94,6 +98,16 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
 
         for key in miners._models.keys():
             miners._models[key]["weights"] = total_weights
+    
+    def _gossip_to_miner(self, selected_miner):
+        """Gossiping mechanism for the pool. Only the selected miner will get all the weights. This is done for efficency where a lot
+        of miners are present in the pool (i.e. Proof of Stake)"""
+        miners = self._pool.aggregators
+        total_weights = [
+            weight for miner in miners._models.values() for weight in miner["weights"]
+        ]
+
+        miners._models[selected_miner]["weights"] = total_weights
 
     def aggregate(
         self,
@@ -120,11 +134,11 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
 
                 agg_pool.map(set_weights, agg_pool)
 
-        selected_server = self.consensus_mechanism(
+        selected_miner = self.consensus_mechanism(
             miners=self._pool.aggregators._models, **kwargs
         )
 
-        if selected_server is None:
+        if selected_miner is None:
             # We are not going to need the weights, we will pick them again in the next round
             for v in self.aggregators._models.values():
                 v["weights"] = []
@@ -132,11 +146,11 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
             return False
 
         if self._config.gossip_on_agg and not self._config.gossip_before_agg:
-            self._gossip()
+            self._gossip_to_miner(selected_miner) if self._config.gossip_selected_only else self._gossip()
 
-        agg_function(self.aggregators._models[selected_server], None)
+        agg_function(self.aggregators._models[selected_miner], None)
         weights = deepcopy(
-            self.aggregators._models[selected_server]["aggregated_weights"]
+            self.aggregators._models[selected_miner]["aggregated_weights"]
         )
         self._blockchain.add_block(self.pack_block(weights=weights))
         for v in self.aggregators._models.values():
@@ -194,7 +208,7 @@ class PoWBlockchainPool(BlockchainPool):
             else kwargs["blockchain"]
         )
 
-        config = PoolConfig(gossip_before_agg=False, gossip_on_agg=True, aggregate_before_agg=False)
+        config = PoolConfig(gossip_before_agg=False, gossip_on_agg=True, aggregate_before_agg=False, gossip_selected_only=True)
 
         self.initialize_pool(bc, pool, config, **kwargs)
 
@@ -317,8 +331,10 @@ class PoSBlockchainPool(BlockchainPool):
         miners = list(pool.aggregators._models.values())
         for miner in miners:
             miner[_STAKE_BLOCKFED_TAG] = initial_stake
+        
+        config = PoolConfig(gossip_selected_only=True)
 
-        self.initialize_pool(bc, pool, **kwargs)
+        self.initialize_pool(bc, pool, config, **kwargs)
 
     def pack_block(self, weights):
         return BlockPoS(weights=weights)
