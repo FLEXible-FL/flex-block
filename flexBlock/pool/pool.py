@@ -28,11 +28,7 @@ _BlockchainType = TypeVar("_BlockchainType", bound=Blockchain)
 class PoolConfig:
     gossip_before_agg: bool = True
     gossip_on_agg: bool = True
-    gossip_selected_only: bool = False
     aggregate_before_agg: bool = False
-
-    def __post_init__(self):
-        assert not (self.gossip_selected_only and self.gossip_before_agg), "Cannot gossip only to selected before aggregation"
 
 
 _default_pool_config = PoolConfig()
@@ -146,18 +142,25 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
             return False
 
         if self._config.gossip_on_agg and not self._config.gossip_before_agg:
-            self._gossip_to_miner(selected_miner) if self._config.gossip_selected_only else self._gossip()
+            self._gossip_to_miner(selected_miner)
+        
+        selected_model = self.aggregators._models[selected_miner]
 
-        agg_function(self.aggregators._models[selected_miner], None)
+        agg_function(selected_model, None)
         weights = deepcopy(
-            self.aggregators._models[selected_miner]["aggregated_weights"]
+            selected_model["aggregated_weights"]
         )
         self._blockchain.add_block(self.pack_block(weights=weights))
-        for v in self.aggregators._models.values():
-            v["aggregated_weights"] = deepcopy(weights)
-            v["weights"] = []
+        # Set model of the selected miner
+        agg_pool = self.aggregators.select(
+            lambda actor_id, _: actor_id == selected_model.actor_id
+        )
+        agg_pool.map(set_weights, agg_pool)
 
-        self.aggregators.map(set_weights, self.servers)
+        
+        for v in self.aggregators._models.values():
+            v["weights"] = []
+            v["model"] = deepcopy(selected_model["model"])
 
         return True
 
@@ -208,7 +211,7 @@ class PoWBlockchainPool(BlockchainPool):
             else kwargs["blockchain"]
         )
 
-        config = PoolConfig(gossip_before_agg=False, gossip_on_agg=True, aggregate_before_agg=False, gossip_selected_only=True)
+        config = PoolConfig(gossip_before_agg=False, gossip_on_agg=True, aggregate_before_agg=False)
 
         self.initialize_pool(bc, pool, config, **kwargs)
 
@@ -332,7 +335,7 @@ class PoSBlockchainPool(BlockchainPool):
         for miner in miners:
             miner[_STAKE_BLOCKFED_TAG] = initial_stake
         
-        config = PoolConfig(gossip_selected_only=True)
+        config = PoolConfig()
 
         self.initialize_pool(bc, pool, config, **kwargs)
 
