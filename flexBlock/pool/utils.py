@@ -5,11 +5,12 @@ from flex.actors import FlexActors, FlexRole
 from flex.model import FlexModel
 from numpy.random import permutation
 
+from flexBlock.common import CLIENT_CONNECTIONS
+
 
 def create_miners(
-    actors: FlexActors, number_of_miners: int, connection_tag: str
+    actors: FlexActors, number_of_miners: int, connection_tag: str = CLIENT_CONNECTIONS
 ) -> Tuple[FlexActors, Dict[Hashable, FlexModel]]:
-    # TODO: connection_tag to default
     """Modify actors by creating a given ammount of miners and
     assinging the previous actors to them through the given connection_tag.
 

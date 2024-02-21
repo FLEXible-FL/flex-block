@@ -11,13 +11,18 @@ from flex.actors.actors import FlexActors, FlexRole
 from flex.data import Dataset, FedDataset
 from flex.model.model import FlexModel
 from flex.pool import FlexPool
-from flexBlock.blockchain.blockchain import (Blockchain, BlockchainPoFL,
-                                             BlockchainPoS, BlockchainPow,
-                                             BlockPoFL, BlockPoS, BlockPoW)
-from flexBlock.common import DEBUG
+from flexBlock.blockchain.blockchain import (
+    Blockchain,
+    BlockchainPoFL,
+    BlockchainPoS,
+    BlockchainPow,
+    BlockPoFL,
+    BlockPoS,
+    BlockPoW,
+)
+from flexBlock.common import DEBUG, CLIENT_CONNECTIONS
 from flexBlock.pool.utils import create_miners
 
-CLIENT_CONNECTIONS = "clients_connections"
 _STAKE_BLOCKFED_TAG = "stake"
 _INITIAL_STAKE = 32
 
@@ -94,7 +99,7 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
 
         for key in miners._models.keys():
             miners._models[key]["weights"] = total_weights
-    
+
     def _gossip_to_miner(self, selected_miner):
         """Gossiping mechanism for the pool. Only the selected miner will get all the weights. This is done for efficency where a lot
         of miners are present in the pool (i.e. Proof of Stake)"""
@@ -119,7 +124,7 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
                 # aggregate weights and set them to the aggregator's model
                 # We also need to save a copy of weights to restore them later (agg_function removes them)
                 if len(v["weights"]) == 0:
-                    continue # The miner did not collect any weights 
+                    continue  # The miner did not collect any weights
 
                 weights = deepcopy(v["weights"])
                 agg_function(v, None)
@@ -143,13 +148,11 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
 
         if self._config.gossip_on_agg and not self._config.gossip_before_agg:
             self._gossip_to_miner(selected_miner)
-        
+
         selected_model = self.aggregators._models[selected_miner]
 
         agg_function(selected_model, None)
-        weights = deepcopy(
-            selected_model["aggregated_weights"]
-        )
+        weights = deepcopy(selected_model["aggregated_weights"])
         self._blockchain.add_block(self.pack_block(weights=weights))
         # Set model of the selected miner
         agg_pool = self.aggregators.select(
@@ -157,7 +160,6 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         )
         agg_pool.map(set_weights, agg_pool)
 
-        
         for v in self.aggregators._models.values():
             v["weights"] = []
             v["model"] = deepcopy(selected_model["model"])
@@ -211,7 +213,9 @@ class PoWBlockchainPool(BlockchainPool):
             else kwargs["blockchain"]
         )
 
-        config = PoolConfig(gossip_before_agg=False, gossip_on_agg=True, aggregate_before_agg=False)
+        config = PoolConfig(
+            gossip_before_agg=False, gossip_on_agg=True, aggregate_before_agg=False
+        )
 
         self.initialize_pool(bc, pool, config, **kwargs)
 
@@ -236,7 +240,10 @@ class PoWBlockchainPool(BlockchainPool):
             selected_miner_index += 1
             selected_miner_index %= len(miner_keys)
 
-        if DEBUG >= 1: print(f"[PoW] selected miner: {miner_keys[selected_miner_index]:10} nonce: {nonce}")
+        if DEBUG >= 1:
+            print(
+                f"[PoW] selected miner: {miner_keys[selected_miner_index]:10} nonce: {nonce}"
+            )
         return miner_keys[selected_miner_index]
 
 
@@ -305,11 +312,12 @@ class PoFLBlockchainPool(BlockchainPool):
         for miner, model in miners.items():
             acc = eval_function(model, eval_dataset)
             if acc >= accuracy:
-                if DEBUG >= 1: print(f"[POFL] miner: {miner:10} acc: {acc}")
+                if DEBUG >= 1:
+                    print(f"[POFL] miner: {miner:10} acc: {acc}")
                 valid_miners.append((miner, acc))
-        
+
         valid_miners.sort(key=lambda x: x[1])
-        
+
         return valid_miners[-1][0] if len(valid_miners) > 0 else None
 
 
@@ -334,7 +342,7 @@ class PoSBlockchainPool(BlockchainPool):
         miners = list(pool.aggregators._models.values())
         for miner in miners:
             miner[_STAKE_BLOCKFED_TAG] = initial_stake
-        
+
         config = PoolConfig()
 
         self.initialize_pool(bc, pool, config, **kwargs)
@@ -347,7 +355,10 @@ class PoSBlockchainPool(BlockchainPool):
 
         key_stake = list(filter(lambda x: x[1] and x[1] > 0, key_stake))
         selected_miner = random.choices(key_stake, [s for _, s in key_stake])[0][0]
-        if DEBUG >= 1: print(f"[PoS] selected miner: {selected_miner: 10} stake: {self.aggregators._models[selected_miner][_STAKE_BLOCKFED_TAG]}")
+        if DEBUG >= 1:
+            print(
+                f"[PoS] selected miner: {selected_miner: 10} stake: {self.aggregators._models[selected_miner][_STAKE_BLOCKFED_TAG]}"
+            )
         self.aggregators._models[selected_miner][_STAKE_BLOCKFED_TAG] += 1
 
         return selected_miner
