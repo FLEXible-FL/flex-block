@@ -4,6 +4,7 @@ from typing import List
 from flex.common.utils import check_min_arguments
 from flex.model import FlexModel
 from flex.pool.decorators import ERROR_MSG_MIN_ARG_GENERATOR
+
 from flexBlock.pool.pool import CLIENT_CONNECTIONS
 
 

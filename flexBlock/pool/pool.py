@@ -11,6 +11,7 @@ from flex.actors.actors import FlexActors, FlexRole
 from flex.data import Dataset, FedDataset
 from flex.model.model import FlexModel
 from flex.pool import FlexPool
+
 from flexBlock.blockchain.blockchain import (
     Blockchain,
     BlockchainPoFL,
@@ -20,7 +21,7 @@ from flexBlock.blockchain.blockchain import (
     BlockPoS,
     BlockPoW,
 )
-from flexBlock.common import DEBUG, CLIENT_CONNECTIONS
+from flexBlock.common import CLIENT_CONNECTIONS, DEBUG
 from flexBlock.pool.utils import create_miners
 
 _STAKE_BLOCKFED_TAG = "stake"

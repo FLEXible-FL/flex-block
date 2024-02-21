@@ -25,17 +25,18 @@ class Block(ABC):
     def hash_weights(cls, weights) -> str:
         try:
             import torch
+
             if isinstance(weights, torch.Tensor):
                 return cls.hash_weights(weights.cpu().numpy())
         except ImportError:
             pass
-        
+
         if isinstance(weights, np.ndarray):
             return sha256(weights.tobytes()).hexdigest()
-            
+
         if isinstance(weights, list):
             return "".join([cls.hash_weights(w) for w in weights])
-        
+
         return sha256(bytes(weights)).hexdigest()
 
 
