@@ -19,7 +19,7 @@ def collect_to_send_wrapper(func):
     return wrapped
 
 
-def deploy_server_to_miner(func):
+def deploy_server_to_miner_wrapper(func):
     """Allows to change a function wrapped by `deploy_server_model` to a compatible flex-block function with `deploy_miner_model`.
 
     Args:
