@@ -12,15 +12,9 @@ from flex.data import Dataset, FedDataset
 from flex.model.model import FlexModel
 from flex.pool import FlexPool
 
-from flexBlock.blockchain.blockchain import (
-    Blockchain,
-    BlockchainPoFL,
-    BlockchainPoS,
-    BlockchainPow,
-    BlockPoFL,
-    BlockPoS,
-    BlockPoW,
-)
+from flexBlock.blockchain.blockchain import (Blockchain, BlockchainPoFL,
+                                             BlockchainPoS, BlockchainPow,
+                                             BlockPoFL, BlockPoS, BlockPoW)
 from flexBlock.common import CLIENT_CONNECTIONS, DEBUG
 from flexBlock.pool.utils import create_miners
 
