@@ -154,7 +154,22 @@ __MACOSX/
 *.mat
 *.zip
 *.rar
+*.tar.gz
 
 # Datasets
 torch_datasets/
 data/
+*-batches-py/
+
+# Collected data
+*.json
+*.mat
+
+# Snapshots
+*.pickle
+
+# Slurm
+*.out
+
+# Experiments
+experiments/
