@@ -90,7 +90,7 @@ class Blockchain(ABC, Generic[_BlockType]):
 
         self.chain.append(block)
 
-    def get_last_block(self):
+    def get_last_block(self) -> _BlockType:
         return self.chain[-1]
 
 
