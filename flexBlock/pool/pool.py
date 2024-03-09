@@ -141,22 +141,29 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
 
             return False
 
-        if self._config.gossip_on_agg and not self._config.gossip_before_agg:
+        gossip_after_consensus = self._config.gossip_on_agg and not self._config.gossip_before_agg
+        if gossip_after_consensus:
             self._gossip_to_miner(selected_miner)
 
         selected_model = self.aggregators._models[selected_miner]
 
-        agg_function(selected_model, None)
+        if not self._config.aggregate_before_agg or gossip_after_consensus:
+            agg_function(selected_model, None)
+            # Set model of the selected miner
+            agg_pool = self.aggregators.select(
+                lambda actor_id, _: actor_id == selected_model.actor_id
+            )
+            agg_pool.map(set_weights, agg_pool)
+        
         weights = deepcopy(selected_model["aggregated_weights"])
         self._blockchain.add_block(self.pack_block(weights=weights))
-        # Set model of the selected miner
-        agg_pool = self.aggregators.select(
-            lambda actor_id, _: actor_id == selected_model.actor_id
-        )
-        agg_pool.map(set_weights, agg_pool)
 
         for v in self.aggregators._models.values():
+            if v.actor_id == selected_model.actor_id:
+                continue
+
             v["weights"] = []
+            v["aggregated_weights"] = []
             v["model"] = deepcopy(selected_model["model"])
 
         return True
@@ -308,7 +315,7 @@ class PoFLBlockchainPool(BlockchainPool):
             acc = eval_function(model, eval_dataset)
             if acc >= accuracy:
                 if DEBUG >= 1:
-                    print(f"[POFL] miner: {miner:10} acc: {acc}")
+                    print(f"[POFL] miner: {miner:10} acc: {acc} target: {accuracy}", flush=True)
                 valid_miners.append((miner, acc))
 
         valid_miners.sort(key=lambda x: x[1])
