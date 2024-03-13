@@ -15,7 +15,6 @@ This repository includes both:
 
 ### Explanatory notebooks
 - *cifar-10.ipynb*: Shows how to train a model in the cifar 10 dataset with a blockchain architecture.
-- *Federated blockchain linear regression.ipynb*: Shows how to train a basic linear regression model with a blockchain architecture.
 - *Proof of federated Learning MNIST.ipynb*: Explains and shows how to use the Proof Of Federated Learning blockchain architecture for training a simple model in the popular MNIST dataset.
 - *Custom blockchain.ipynb*: Shows how to create your own blockchain architecture and how to later use it in any kind of FLEX experiment.
 
