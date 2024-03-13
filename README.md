@@ -38,3 +38,6 @@ In order to install this repo locally:
 ``
 
 FLEX-block is available on the PyPi repository and can be easily installed using pip:
+```
+pip install flexBlock
+```
