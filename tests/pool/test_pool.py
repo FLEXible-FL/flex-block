@@ -14,7 +14,9 @@ Copyright (C) 2024  Instituto Andaluz Interuniversitario en Ciencia de Datos e I
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+
 import unittest
+from unittest.mock import MagicMock
 from typing import Dict, Hashable
 
 import numpy as np
@@ -24,7 +26,7 @@ from flex.model import FlexModel
 from flex.pool import FlexPool, init_server_model
 
 from flexBlock.blockchain import Block, Blockchain
-from flexBlock.pool import BlockchainPool
+from flexBlock.pool import BlockchainPool, PoolConfig
 
 WEIGHTS_LENGTH = 5
 
@@ -33,6 +35,7 @@ WEIGHTS_LENGTH = 5
 def init_server_func():
     model = FlexModel()
     model["weights"] = [np.random.rand(WEIGHTS_LENGTH)]
+    model["model"] = [np.random.rand(WEIGHTS_LENGTH)]
     return model
 
 
@@ -70,17 +73,20 @@ class CustomBlockchain(Blockchain[CustomBlock]):
 
 class TestBlockchainPool(unittest.TestCase):
     @pytest.fixture(autouse=True)
-    def _fixture_flex_pool(self, flp):
+    def _fixture_flex_pool(self, flp: FlexPool):
         self._flp: FlexPool = flp
 
-    def _create_custom_pool(self):
+    def _create_custom_pool(self, config=None):
         flp = self._flp
 
         class CustomPool(BlockchainPool[CustomBlockchain]):
             def __init__(self) -> None:
                 bc = CustomBlockchain(GENESIS_BLOCK)
                 pool = flp
-                self.initialize_pool(bc, pool)
+                if config is None:
+                    self.initialize_pool(bc, pool)
+                else:
+                    self.initialize_pool(bc, pool, config)
 
             def pack_block(self, weights):
                 return CustomBlock(weights)
@@ -88,12 +94,15 @@ class TestBlockchainPool(unittest.TestCase):
             def consensus_mechanism(
                 self, miners: Dict[Hashable, FlexModel], **kwargs
             ) -> Hashable | None:
-                return list(miners.keys())[0]
+                miner = list(miners.keys())[0]
+                miners[miner]["aggregated_weights"] = []
+                return miner
 
         return CustomPool()
 
     def test_when_using_getter_then_pool_getters_are_used(self):
         pool = self._create_custom_pool()
+
         assert pool.aggregators == pool._pool.aggregators
         assert pool.clients == pool._pool.clients
         assert pool.servers == pool._pool.servers
@@ -125,3 +134,61 @@ class TestBlockchainPool(unittest.TestCase):
                 assert len(miner["weights"]) < len(
                     w
                 ), "Miner has more weights than it should"
+
+    def test_when_agg_before_consensus_and_no_gossip_after_then_agg_only_happens_once(
+        self,
+    ):
+        agg_operator = MagicMock()
+        set_weights = MagicMock()
+        config = PoolConfig(
+            gossip_before_agg=False, aggregate_before_agg=True, gossip_on_agg=False
+        )
+        pool = self._create_custom_pool(config=config)
+        pool.servers.map(init_server_func)
+        pool.aggregate(agg_function=agg_operator, set_weights=set_weights)
+        assert agg_operator.call_count == len(pool.aggregators)
+        assert set_weights.call_count == len(pool.aggregators)
+
+    def test_when_agg_before_consensus_and_gossip_after_then_agg_happens_once_per_miner_and_after_gossip(
+        self,
+    ):
+        agg_operator = MagicMock()
+        set_weights = MagicMock()
+        config = PoolConfig(
+            gossip_before_agg=False, aggregate_before_agg=True, gossip_on_agg=True
+        )
+        pool = self._create_custom_pool(config=config)
+        pool.servers.map(init_server_func)
+        pool.aggregate(agg_function=agg_operator, set_weights=set_weights)
+        assert agg_operator.call_count == len(pool.aggregators) + 1
+        assert set_weights.call_count == len(pool.aggregators) + 1
+
+    def test_when_no_miner_is_selected_then_aggregation_stops(
+        self,
+    ):
+        agg_operator = MagicMock()
+        set_weights = MagicMock()
+        config = PoolConfig(
+            gossip_before_agg=False, aggregate_before_agg=False, gossip_on_agg=False
+        )
+        pool = self._create_custom_pool(config=config)
+        pool.consensus_mechanism = MagicMock(return_value=None)
+        pool.servers.map(init_server_func)
+        result = pool.aggregate(agg_function=agg_operator, set_weights=set_weights)
+        assert not result
+        pool.consensus_mechanism.assert_called_once()
+        agg_operator.assert_not_called()
+        set_weights.assert_not_called()
+
+    def test_when_agg_is_done_then_pack_block_is_called_and_appended(
+        self,
+    ):
+        agg_operator = MagicMock()
+        set_weights = MagicMock()
+        pool = self._create_custom_pool()
+        blocks_in_chain = len(pool.blockchain.chain)
+        pool.pack_block = MagicMock(return_value=CustomBlock([0, 0, 0]))
+        pool.servers.map(init_server_func)
+        pool.aggregate(agg_function=agg_operator, set_weights=set_weights)
+        assert pool.pack_block.call_count == 1
+        assert len(pool.blockchain.chain) == blocks_in_chain + 1
