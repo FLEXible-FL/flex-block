@@ -141,7 +141,9 @@ class TestBlockchainPool(unittest.TestCase):
         agg_operator = MagicMock()
         set_weights = MagicMock()
         config = PoolConfig(
-            gossip_before_agg=False, aggregate_before_agg=True, gossip_on_agg=False
+            gossip_before_consensus=False,
+            aggregate_before_consensus=True,
+            gossip_on_agg=False,
         )
         pool = self._create_custom_pool(config=config)
         pool.servers.map(init_server_func)
@@ -155,7 +157,9 @@ class TestBlockchainPool(unittest.TestCase):
         agg_operator = MagicMock()
         set_weights = MagicMock()
         config = PoolConfig(
-            gossip_before_agg=False, aggregate_before_agg=True, gossip_on_agg=True
+            gossip_before_consensus=False,
+            aggregate_before_consensus=True,
+            gossip_on_agg=True,
         )
         pool = self._create_custom_pool(config=config)
         pool.servers.map(init_server_func)
@@ -169,7 +173,9 @@ class TestBlockchainPool(unittest.TestCase):
         agg_operator = MagicMock()
         set_weights = MagicMock()
         config = PoolConfig(
-            gossip_before_agg=False, aggregate_before_agg=False, gossip_on_agg=False
+            gossip_before_consensus=False,
+            aggregate_before_consensus=False,
+            gossip_on_agg=False,
         )
         pool = self._create_custom_pool(config=config)
         pool.consensus_mechanism = MagicMock(return_value=None)

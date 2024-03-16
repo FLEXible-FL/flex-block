@@ -14,6 +14,7 @@ Copyright (C) 2024  Instituto Andaluz Interuniversitario en Ciencia de Datos e I
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+
 from __future__ import annotations
 
 import functools
@@ -28,9 +29,15 @@ from flex.data import Dataset, FedDataset
 from flex.model.model import FlexModel
 from flex.pool import FlexPool
 
-from flexBlock.blockchain.blockchain import (Blockchain, BlockchainPoFL,
-                                             BlockchainPoS, BlockchainPow,
-                                             BlockPoFL, BlockPoS, BlockPoW)
+from flexBlock.blockchain.blockchain import (
+    Blockchain,
+    BlockchainPoFL,
+    BlockchainPoS,
+    BlockchainPow,
+    BlockPoFL,
+    BlockPoS,
+    BlockPoW,
+)
 from flexBlock.common import CLIENT_CONNECTIONS, DEBUG
 from flexBlock.pool.utils import create_miners
 
@@ -42,15 +49,47 @@ _BlockchainType = TypeVar("_BlockchainType", bound=Blockchain)
 
 @dataclass(frozen=True)
 class PoolConfig:
-    gossip_before_agg: bool = True
+    """
+    Represents the configuration settings for a pool.
+
+    Attributes:
+        gossip_before_consensus: Boolean indicating if the gossiping mechanism should be executed before the consensus mechanism.
+        gossip_on_agg: Boolean indicating if the gossiping mechanism should be executed before the aggregation.
+        aggregate_before_consensus: Boolean indicating if the aggregation should be executed before the consensus mechanism.
+    """
+
+    gossip_before_consensus: bool = True
     gossip_on_agg: bool = True
-    aggregate_before_agg: bool = False
+    aggregate_before_consensus: bool = False
 
 
 _default_pool_config = PoolConfig()
 
 
 class BlockchainPool(ABC, Generic[_BlockchainType]):
+    """
+    A class representing a blockchain pool.
+
+    Attributes:
+        _pool (FlexPool): The underlying FlexPool object.
+        _blockchain (_BlockchainType): The blockchain object.
+        _config (PoolConfig): The configuration for the pool.
+
+    Methods:
+        initialize_pool: Initializes the pool with the given blockchain, pool, and configuration.
+        blockchain: Returns the blockchain object.
+        actor_ids: Returns the actor IDs in the pool.
+        clients: Returns the clients in the pool.
+        aggregators: Returns the aggregators in the pool.
+        servers: Returns the servers in the pool.
+        _gossip: Gossiping mechanism for the pool.
+        _gossip_to_miner: Gossiping mechanism for the pool with a selected miner.
+        aggregate: Aggregates weights in the pool.
+        pack_block: Abstract method to pack a block with weights.
+        consensus_mechanism: Abstract method to determine the consensus mechanism.
+
+    """
+
     _pool: FlexPool
     _blockchain: _BlockchainType
     _config: PoolConfig
@@ -62,47 +101,83 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         config: PoolConfig = _default_pool_config,
         **kwargs,
     ):
+        """
+        Initialize the pool with the given blockchain, pool, and configuration. Should be called in the constructor of the subclass.
+
+        Args:
+        ----
+            blockchain (_BlockchainType): The blockchain object.
+            pool (FlexPool): The pool object.
+            config (PoolConfig, optional): The configuration for the pool. Defaults to default pool configuration.
+            **kwargs: Additional keyword arguments.
+
+        """
         self._pool = pool
         self._blockchain = blockchain
         self._config = config
 
     @property
     def blockchain(self):
+        """
+        Returns the blockchain of the pool.
+
+        Returns
+        -------
+            _BlockchainType: The blockchain object.
+
+        """
         return self._blockchain
 
     @functools.cached_property
     def actor_ids(self):
+        """
+        Returns the actor IDs in the pool.
+
+        Returns
+        -------
+            FlexPool: The pool containing all the actor IDs.
+
+        """
         return self._pool.actor_ids
 
     @functools.cached_property
     def clients(self):
-        """Property to get all the clients available in a pool.
+        """
+        Returns the clients in the pool.
 
         Returns:
-            FlexPool: Pool containing all the clients from a pool
+            FlexPool: The pool containing all the clients.
+
         """
         return self._pool.clients
 
     @functools.cached_property
     def aggregators(self):
-        """Property to get all the aggregator available in a pool.
+        """
+        Returns the aggregators in the pool.
 
         Returns:
-            FlexPool: Pool containing all the aggregators from a pool
+            FlexPool: The pool containing all the aggregators.
+
         """
         return self._pool.aggregators
 
     @functools.cached_property
     def servers(self):
-        """Property to get all the servers available in a pool.
+        """
+        Returns the servers in the pool.
 
         Returns:
-            FlexPool: Pool containing all the servers from a pool
+            FlexPool: The pool containing all the servers.
+
         """
         return self._pool.servers
 
     def _gossip(self):
-        """Gossiping mechanism for the pool. The miners will share the weights of their clients with each other."""
+        """
+        Gossiping mechanism for the pool. The miners will share the weights of their clients with each other.
+
+        """
         miners = self._pool.aggregators
         total_weights = [
             weight for miner in miners._models.values() for weight in miner["weights"]
@@ -112,8 +187,15 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
             miners._models[key]["weights"] = total_weights
 
     def _gossip_to_miner(self, selected_miner):
-        """Gossiping mechanism for the pool. Only the selected miner will get all the weights. This is done for efficency where a lot
-        of miners are present in the pool (i.e. Proof of Stake)"""
+        """
+        Gossiping mechanism for the pool. Only the selected miner will get all the weights. This is done for efficiency where a lot
+        of miners are present in the pool (i.e. Proof of Stake).
+
+        Args:
+        ----
+            selected_miner: The selected miner.
+
+        """
         miners = self._pool.aggregators
         total_weights = [
             weight for miner in miners._models.values() for weight in miner["weights"]
@@ -127,10 +209,24 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
         set_weights: Callable,
         **kwargs,
     ):
-        if self._config.gossip_before_agg:
+        """
+        Run the aggregation mechanism for the pool. This implies gossiping, consensus mechanism, and aggregation.
+
+        Args:
+        ----
+            agg_function (Callable): The aggregation operator.
+            set_weights (Callable): The function to set the weights for the server.
+            **kwargs: Additional keyword arguments. For compulsory arguments, see the `consensus_mechanism` method for a given subclass.
+
+        Returns:
+        -------
+            bool: True if the aggregation was performed, False otherwise. Some subclasses may always return True.
+
+        """
+        if self._config.gossip_before_consensus:
             self._gossip()
 
-        if self._config.aggregate_before_agg:
+        if self._config.aggregate_before_consensus:
             for v in self.aggregators._models.values():
                 # aggregate weights and set them to the aggregator's model
                 # We also need to save a copy of weights to restore them later (agg_function removes them)
@@ -157,20 +253,22 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
 
             return False
 
-        gossip_after_consensus = self._config.gossip_on_agg and not self._config.gossip_before_agg
+        gossip_after_consensus = (
+            self._config.gossip_on_agg and not self._config.gossip_before_consensus
+        )
         if gossip_after_consensus:
             self._gossip_to_miner(selected_miner)
 
         selected_model = self.aggregators._models[selected_miner]
 
-        if not self._config.aggregate_before_agg or gossip_after_consensus:
+        if not self._config.aggregate_before_consensus or gossip_after_consensus:
             agg_function(selected_model, None)
             # Set model of the selected miner
             agg_pool = self.aggregators.select(
                 lambda actor_id, _: actor_id == selected_model.actor_id
             )
             agg_pool.map(set_weights, agg_pool)
-        
+
         weights = deepcopy(selected_model["aggregated_weights"])
         self._blockchain.add_block(self.pack_block(weights=weights))
 
@@ -186,19 +284,57 @@ class BlockchainPool(ABC, Generic[_BlockchainType]):
 
     @abstractmethod
     def pack_block(self, weights):
+        """
+        Abstract method to pack a block with weights.
+
+        Args:
+        ----
+            weights: The weights to pack.
+
+        Returns:
+        -------
+            The packed block.
+
+        """
         pass
 
     @abstractmethod
     def consensus_mechanism(
         self, miners: Dict[Hashable, FlexModel], **kwargs
     ) -> Optional[Hashable]:
+        """
+        Abstract method to determine the consensus mechanism.
+
+        Args:
+        ----
+        ----
+            miners (Dict[Hashable, FlexModel]): The miners in the pool.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+        -------
+            Optional[Hashable]: The selected miner. If None is returned, no miner was selected.
+
+        """
         pass
 
     def __len__(self):
+        """
+        Return the ammount of nodes in the pool.
+
+        Returns
+        -------
+            int: The ammount of nodes in the pool.
+
+        """
         return len(self._pool)
 
 
 class PoWBlockchainPool(BlockchainPool):
+    """
+    A class representing a Proof-of-Work (PoW) blockchain pool. Miners and clients are disjoint sets.
+    """
+
     def __init__(
         self,
         fed_dataset: FedDataset,
@@ -206,6 +342,19 @@ class PoWBlockchainPool(BlockchainPool):
         number_of_miners: int,
         **kwargs,
     ):
+        """
+        Initialize the Pool object. A PoW blockchain is used.
+
+        Args:
+            fed_dataset (FedDataset): The federated dataset.
+            init_func (Callable): The initialization function to be called on the servers.
+            number_of_miners (int): The number of miners in the pool.
+            **kwargs: Additional keyword arguments.
+
+        Raises:
+            ValueError: If the number of miners is less than 1.
+        """
+
         if number_of_miners < 1:
             raise ValueError("The number of nodes must be at least 1")
 
@@ -232,7 +381,9 @@ class PoWBlockchainPool(BlockchainPool):
         )
 
         config = PoolConfig(
-            gossip_before_agg=False, gossip_on_agg=True, aggregate_before_agg=False
+            gossip_before_consensus=False,
+            gossip_on_agg=True,
+            aggregate_before_consensus=False,
         )
 
         self.initialize_pool(bc, pool, config, **kwargs)
@@ -241,6 +392,19 @@ class PoWBlockchainPool(BlockchainPool):
         return BlockPoW(weights=weights)
 
     def consensus_mechanism(self, miners, **kwargs):
+        """
+        Implement the consensus mechanism for selecting a miner to mine the next block.
+
+        Args:
+        ----
+            miners (dict): A dictionary containing the miners and their respective keys.
+            **kwargs: Additional keyword arguments. None is expected.
+
+        Returns:
+        -------
+            str: The key of the selected miner.
+
+        """
         miner_keys = list(miners.keys())
         previous_block = self.blockchain.get_last_block()
         selected_miner_index = 0
@@ -266,6 +430,12 @@ class PoWBlockchainPool(BlockchainPool):
 
 
 class PoFLBlockchainPool(BlockchainPool):
+    """
+    A class representing a Proof-of-Learning (PoFL) blockchain pool.
+
+    The set of miners and clients are disjoint. The pool is initialized with a PoFL blockchain.
+    """
+
     def __init__(
         self,
         fed_dataset: FedDataset,
@@ -273,6 +443,19 @@ class PoFLBlockchainPool(BlockchainPool):
         number_of_miners: int,
         **kwargs,
     ):
+        """
+        Initializes a Pool object.
+
+        Args:
+            fed_dataset (FedDataset): The federated dataset.
+            init_func (Callable): The initialization function to be called on the pool's servers.
+            number_of_miners (int): The number of miners in the pool.
+            **kwargs: Additional keyword arguments.
+
+        Raises:
+            ValueError: If the number of miners is less than 1.
+        """
+
         if number_of_miners < 1:
             raise ValueError("The number of nodes must be at least 1")
 
@@ -299,7 +482,9 @@ class PoFLBlockchainPool(BlockchainPool):
         )
 
         config = PoolConfig(
-            gossip_before_agg=False, aggregate_before_agg=True, gossip_on_agg=False
+            gossip_before_consensus=False,
+            aggregate_before_consensus=True,
+            gossip_on_agg=False,
         )
 
         self.initialize_pool(
@@ -310,9 +495,41 @@ class PoFLBlockchainPool(BlockchainPool):
         )
 
     def pack_block(self, weights):
+        """
+        Packs the given weights into a PoFL block.
+
+        Args:
+        ----
+            weights: The weights to be packed into the block.
+
+        Returns:
+        -------
+            BlockPoFL: The PoFL block containing the weights.
+
+        """
         return BlockPoFL(weights=weights)
 
     def consensus_mechanism(self, miners, **kwargs):
+        """
+        Implement the consensus mechanism for selecting the miner with the highest accuracy.
+
+        Args:
+        ----
+            miners: A dictionary mapping miner IDs to their corresponding models.
+            eval_function: The evaluation function to be used. It measures the accuracy of the models.
+            eval_dataset: The dataset to be used for evaluation.
+            accuracy: The minimum accuracy required for a miner to be selected.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+        -------
+            str: The ID of the miner with the highest accuracy, or None if no valid miners are found.
+
+        Raises:
+        ------
+            AssertionError: If the evaluation function, evaluation dataset, or accuracy are not provided.
+
+        """
         eval_function = kwargs.get("eval_function")
         eval_dataset = kwargs.get("eval_dataset")
         accuracy = kwargs.get("accuracy")
@@ -331,7 +548,10 @@ class PoFLBlockchainPool(BlockchainPool):
             acc = eval_function(model, eval_dataset)
             if acc >= accuracy:
                 if DEBUG >= 1:
-                    print(f"[POFL] miner: {miner:10} acc: {acc} target: {accuracy}", flush=True)
+                    print(
+                        f"[POFL] miner: {miner:10} acc: {acc} target: {accuracy}",
+                        flush=True,
+                    )
                 valid_miners.append((miner, acc))
 
         valid_miners.sort(key=lambda x: x[1])
@@ -340,35 +560,58 @@ class PoFLBlockchainPool(BlockchainPool):
 
 
 class PoSBlockchainPool(BlockchainPool):
-    def __init__(
-        self,
-        fed_dataset: FedDataset,
-        init_func: Callable,
-        initial_stake: int = _INITIAL_STAKE,
-        **kwargs,
-    ):
-        pool = FlexPool.p2p_pool(fed_dataset, init_func, **kwargs)
-        bc = (
-            BlockchainPoS(
-                BlockPoS([]),
-                **kwargs,
+    """
+    A class representing a Proof-of-Stake (PoS) blockchain pool.
+
+    The sets of miners and clients fully overlap. The pool is initialized with a PoS blockchain.
+    """
+
+    class Pool:
+        def __init__(
+            self,
+            fed_dataset: FedDataset,
+            init_func: Callable,
+            initial_stake: int = _INITIAL_STAKE,
+            **kwargs,
+        ):
+            """
+            Initializes a Pool object.
+
+            Args:
+                fed_dataset (FedDataset): The federated dataset used by the pool.
+                init_func (Callable): The initialization function used to create the pool.
+                initial_stake (int, optional): The initial stake for each miner.
+                **kwargs: Additional keyword arguments.
+            """
+            pool = FlexPool.p2p_pool(fed_dataset, init_func, **kwargs)
+            bc = (
+                BlockchainPoS(
+                    BlockPoS([]),
+                    **kwargs,
+                )
+                if "blockchain" not in kwargs
+                else kwargs["blockchain"]
             )
-            if "blockchain" not in kwargs
-            else kwargs["blockchain"]
-        )
 
-        miners = list(pool.aggregators._models.values())
-        for miner in miners:
-            miner[_STAKE_BLOCKFED_TAG] = initial_stake
+            miners = list(pool.aggregators._models.values())
+            for miner in miners:
+                miner[_STAKE_BLOCKFED_TAG] = initial_stake
 
-        config = PoolConfig()
+            config = PoolConfig()
 
-        self.initialize_pool(bc, pool, config, **kwargs)
+            self.initialize_pool(bc, pool, config, **kwargs)
 
     def pack_block(self, weights):
         return BlockPoS(weights=weights)
 
     def consensus_mechanism(self, miners, **kwargs):
+        """
+        Implements the consensus mechanism for selecting a miner.
+
+        Args:
+            miners: The list of miners.
+
+        """
         key_stake = [(k, m.get(_STAKE_BLOCKFED_TAG)) for k, m in miners.items()]
 
         key_stake = list(filter(lambda x: x[1] and x[1] > 0, key_stake))
