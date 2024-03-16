@@ -14,6 +14,7 @@ Copyright (C) 2024  Instituto Andaluz Interuniversitario en Ciencia de Datos e I
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+
 import functools
 from typing import List
 
@@ -25,6 +26,29 @@ from flexBlock.pool.pool import CLIENT_CONNECTIONS
 
 
 def send_weights_to_miner(func):
+    """
+    Decorate a function that collects the weights from a client.
+
+    This decorator is used to collect weights from clients and
+    send them to the miner.
+    It takes a function as input and wraps it with additional
+    functionality to handle the weight collection process.
+
+    This functions is a counterpart to the `collect_client_weights` decorator
+    from `flexible`.
+    In order to reuse a `collect_client_weights` function, you can use the
+    `collect_to_send_wrapper` function from `flexBlock.pool.primitives` module.
+
+    Args:
+    ----
+        func: The function to be decorated.
+
+    Returns:
+    -------
+        The decorated function.
+
+    """
+
     @functools.wraps(func)
     def _collect_weights_(aggregator_flex_model, clients_flex_models, *args, **kwargs):
         if "weights" not in aggregator_flex_model:
@@ -51,6 +75,28 @@ def send_weights_to_miner(func):
 
 
 def deploy_miner_model(func):
+    """
+    Decorate a function that deploys a miner model to his clients.
+
+
+    This functions is a counterpart to the `deploy_server_model` decorator
+    from `flexible`.
+    In order to reuse a `deploy_server_model` function, you can use the
+    `deploy_server_to_miner_wrapper` function from `flexBlock.pool.primitives` module.
+
+    Args:
+    ----
+        func: The function to be decorated.
+
+    Returns:
+    -------
+        The decorated function that updates the server and client models.
+
+    Raises:
+    ------
+        AssertionError: If the decorated function does not have the minimum required number of arguments.
+    """
+
     min_args = 1
     assert check_min_arguments(func, min_args), ERROR_MSG_MIN_ARG_GENERATOR(
         func, min_args
