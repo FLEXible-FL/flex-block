@@ -14,6 +14,7 @@ Copyright (C) 2024  Instituto Andaluz Interuniversitario en Ciencia de Datos e I
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+
 import random
 import time
 from abc import ABC, abstractmethod
@@ -26,8 +27,26 @@ import numpy as np
 
 @dataclass
 class Block(ABC):
+    """
+    Abstract base class for a block in a blockchain.
+
+    Attributes
+    ----------
+        _previous_hash (str): The hash of the previous block in the blockchain.
+        weights: The weights associated with the block.
+        hash (str): The hash of the current block.
+        timestamp (float): The timestamp of when the block was created.
+    """
+
     @abstractmethod
     def __init__(self, weights):
+        """
+        Initialize a new instance of the Block class.
+
+        Args:
+        ----
+            weights: The weights associated with the block.
+        """
         self._previous_hash = None
         self.weights = weights
         self.hash = None
@@ -35,10 +54,25 @@ class Block(ABC):
 
     @abstractmethod
     def compute_hash(self):
+        """
+        Compute the hash of the block.
+        """
         pass
 
     @classmethod
     def hash_weights(cls, weights) -> str:
+        """
+        Compute the hash of the weights. This function is an utils for implementing the compute_hash method.
+        It currently supports numpy arrays, lists, pytorch tensors, tensorflow tensors and lists of the previous elements.
+
+        Args:
+        ----
+            weights: The weights to be hashed.
+
+        Returns:
+        -------
+            str: The hash of the weights.
+        """
         try:
             import torch
 
@@ -58,12 +92,35 @@ class Block(ABC):
 
 @dataclass
 class BlockPoW(Block):
+    """
+    Represents a block in a Proof of Work (PoW) blockchain.
+
+    Attributes
+    ----------
+        weights (list): The weights of the block.
+        target_zeroes (int): The number of leading zeroes required in the hash.
+
+    Methods
+    -------
+        compute_hash: Computes the hash of the block.
+    """
+
     def __init__(self, weights):
         super().__init__(weights)
-        # Default value
         self.target_zeroes = 3
 
     def compute_hash(self, nonce=None):
+        """
+        Compute the hash of the block.
+
+        Args:
+        ----
+            nonce (int, optional): The nonce value to be included in the hash computation.
+
+        Returns:
+        -------
+            str: The computed hash of the block.
+        """
         hashed_weights = self.hash_weights(self.weights)
         if nonce:
             hashed_weights += str(nonce)
@@ -72,19 +129,55 @@ class BlockPoW(Block):
 
 @dataclass
 class BlockPoFL(Block):
+    """
+    Represents a Proof-of-Federated-Learning (PoFL) block in the blockchain.
+    """
+
     def __init__(self, weights):
         super().__init__(weights)
 
     def compute_hash(self):
+        """
+        Compute the hash of the block by hashing the weights.
+
+        Returns
+        -------
+            str: The computed hash of the block.
+        """
         return self.hash_weights(self.weights)
 
 
 @dataclass
 class BlockPoS(Block):
+    """
+    Represents a Proof-of-Stake (PoS) block in the blockchain.
+
+    Args:
+    ----
+        weights (list): The weights associated with the block.
+
+    Attributes:
+    ----------
+        weights (list): The weights associated with the block.
+
+    Methods:
+    -------
+        compute_hash: Computes the hash of the block.
+
+    """
+
     def __init__(self, weights):
         super().__init__(weights)
 
     def compute_hash(self):
+        """
+        Compute the hash of the block.
+
+        Returns
+        -------
+            str: The computed hash value.
+
+        """
         hashed_weights = self.hash_weights(self.weights)
         return sha256((self._previous_hash + hashed_weights).encode()).hexdigest()
 
@@ -93,13 +186,42 @@ _BlockType = TypeVar("_BlockType", bound=Block)
 
 
 class Blockchain(ABC, Generic[_BlockType]):
+    """
+    A class representing a blockchain.
+
+    Attributes
+    ----------
+        chain (List[_BlockType]): The list of blocks in the blockchain.
+
+    Methods
+    -------
+        __init__(self, genesis_block: _BlockType, *args, **kwargs): Initializes the blockchain with a genesis block.
+        add_block(self, block: _BlockType): Adds a new block to the blockchain.
+        get_last_block(self) -> _BlockType: Returns the last block in the blockchain.
+    """
+
     @abstractmethod
     def __init__(self, genesis_block: _BlockType, *args, **kwargs):
+        """
+        Initialize the blockchain with a genesis block.
+
+        Args:
+        ----
+            genesis_block (_BlockType): The genesis block of the blockchain.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+        """
         genesis_block._previous_hash = "0"
         genesis_block.hash = genesis_block.compute_hash()
         self.chain: List[_BlockType] = [genesis_block]
 
     def add_block(self, block: _BlockType):
+        """
+        Add a new block to the blockchain.
+
+        Args:
+            block (_BlockType): The block to be added to the blockchain.
+        """
         previous_hash = self.chain[-1].hash if len(self.chain) else str(random.random())
         block._previous_hash = previous_hash
         block.hash = block.compute_hash()
@@ -107,10 +229,31 @@ class Blockchain(ABC, Generic[_BlockType]):
         self.chain.append(block)
 
     def get_last_block(self) -> _BlockType:
+        """
+        Return the last block in the blockchain.
+
+        Returns
+        -------
+            _BlockType: The last block in the blockchain.
+        """
         return self.chain[-1]
 
 
 class BlockchainPow(Blockchain[BlockPoW]):
+    """
+    A class representing a proof-of-work blockchain.
+
+    Attributes
+    ----------
+        genesis_block (BlockPoW): The genesis block of the blockchain.
+
+    Methods
+    -------
+        __init__(self, genesis_block: BlockPoW, *args, **kwargs): Initializes a new instance of the `BlockchainPow` class.
+        add_block(self, block): Adds a new block to the blockchain.
+        _adjust_difficulty(self): Adjusts the difficulty of mining new blocks based on the time taken to mine the last block.
+    """
+
     def __init__(self, genesis_block: BlockPoW, *args, **kwargs):
         super().__init__(genesis_block)
 
@@ -139,6 +282,19 @@ class BlockchainPow(Blockchain[BlockPoW]):
 
 
 class BlockchainPoFL(Blockchain[BlockPoFL]):
+    """
+    A Proof-of-Federated-Learning Blockchain implementation.
+
+    Args:
+    ----
+        genesis_block (BlockPoFL): The genesis block of the blockchain.
+
+    Attributes:
+    ----------
+        chain (List[BlockPoFL]): The list of blocks in the blockchain.
+
+    """
+
     def __init__(self, genesis_block: BlockPoFL, *args, **kwargs):
         super().__init__(genesis_block)
 
@@ -147,6 +303,22 @@ class BlockchainPoFL(Blockchain[BlockPoFL]):
 
 
 class BlockchainPoS(Blockchain[BlockPoS]):
+    """
+    A class representing a Proof-of-Stake (PoS) blockchain.
+
+    Attributes:
+    ----------
+        genesis_block (BlockPoS): The genesis block of the blockchain.
+        seconds_to_mine (int): The number of seconds it takes to mine a block.
+
+    Args:
+    ----
+        genesis_block (BlockPoS): The genesis block of the blockchain.
+        *args: Variable length argument list.
+        **kwargs: Arbitrary keyword arguments.
+
+    """
+
     def __init__(self, genesis_block: BlockPoS, *args, **kwargs):
         super().__init__(genesis_block)
         self.seconds_to_mine = kwargs.get("seconds_to_mine", 10)
