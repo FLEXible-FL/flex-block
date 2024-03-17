@@ -14,12 +14,12 @@ Copyright (C) 2024  Instituto Andaluz Interuniversitario en Ciencia de Datos e I
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+
 from typing import Dict, Hashable, Tuple
 
 import numpy as np
 from flex.actors import FlexActors, FlexRole
 from flex.model import FlexModel
-from numpy.random import permutation
 
 from flexBlock.common import CLIENT_CONNECTIONS
 
@@ -27,7 +27,10 @@ from flexBlock.common import CLIENT_CONNECTIONS
 def create_miners(
     actors: FlexActors, number_of_miners: int, connection_tag: str = CLIENT_CONNECTIONS
 ) -> Tuple[FlexActors, Dict[Hashable, FlexModel]]:
-    """Modify actors by creating a given ammount of miners and
+    from numpy.random import permutation
+
+    """
+    Modify actors by creating a given ammount of miners and
     assinging the previous actors to them through the given connection_tag.
 
     Args:
